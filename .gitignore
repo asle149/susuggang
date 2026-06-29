@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+
+# Java
+*.class
+
+# IntelliJ / IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# macOS
+.DS_Store
+
+# Logs / 환경변수
+*.log
+.env
+
+# 개인 문서 (공개 X — Claude 온보딩/로컬 설정)
+CLAUDE.md
+CLAUDE.local.md
+.claude/
