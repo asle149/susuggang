@@ -26,4 +26,11 @@ public class Stock {
         this.productId = productId;
         this.quantity = quantity;
     }
+
+    public void decrease() {
+        if (quantity < 1) {
+            throw new IllegalStateException("재고 부족");
+        }
+        quantity--;
+    }
 }
