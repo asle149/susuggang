@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: susuggang
+  datasource:
+    url: jdbc:postgresql://localhost:5432/susuggang
+    username: sol          # 맥 사용자명 (brew Postgres 기본 롤)
+    password:              # 기본값: 없음
+  jpa:
+    hibernate:
+      ddl-auto: update     # @Entity 보고 테이블 자동 생성
+    show-sql: true         # 실행 SQL 콘솔 출력
