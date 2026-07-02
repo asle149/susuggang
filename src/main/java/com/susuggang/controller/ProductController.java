@@ -3,19 +3,17 @@ package com.susuggang.controller;
 import com.susuggang.dto.ProductCreateRequest;
 import com.susuggang.dto.ProductResponse;
 import com.susuggang.service.ProductService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/products")
+@RequiredArgsConstructor
 public class ProductController {
 
     private final ProductService productService;
-
-    public ProductController(ProductService productService) {
-        this.productService = productService;
-    }
 
     @PostMapping
     public Long create(@RequestBody ProductCreateRequest request) {

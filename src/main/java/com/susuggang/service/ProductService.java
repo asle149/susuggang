@@ -7,22 +7,19 @@ import com.susuggang.dto.ProductCreateRequest;
 import com.susuggang.dto.ProductResponse;
 import com.susuggang.repository.ProductRepository;
 import com.susuggang.repository.StockRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ProductService {
 
     private final ProductRepository productRepository;
     private final StockRepository stockRepository;
-
-    public ProductService(ProductRepository productRepository, StockRepository stockRepository) {
-        this.productRepository = productRepository;
-        this.stockRepository = stockRepository;
-    }
 
     @Transactional
     public Long create(ProductCreateRequest request) {
