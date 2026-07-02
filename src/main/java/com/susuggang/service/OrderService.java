@@ -5,19 +5,16 @@ import com.susuggang.domain.OrderStatus;
 import com.susuggang.domain.Stock;
 import com.susuggang.repository.OrderRepository;
 import com.susuggang.repository.StockRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class OrderService {
 
     private final StockRepository stockRepository;
     private final OrderRepository orderRepository;
-
-    public OrderService(StockRepository stockRepository, OrderRepository orderRepository) {
-        this.stockRepository = stockRepository;
-        this.orderRepository = orderRepository;
-    }
 
     // 비관적 락
     @Transactional
@@ -33,6 +30,14 @@ public class OrderService {
         if (stockRepository.decreaseStock(productId) == 0) {
             throw new IllegalStateException("재고 부족");
         }
+        return saveOrder(buyerId, productId);
+    }
+
+    // 낙관적 락
+    @Transactional
+    public Long orderOptimisticOnce(Long buyerId, Long productId){
+        Stock stock = stockRepository.findByProductId(productId).orElseThrow();
+        stock.decrease();
         return saveOrder(buyerId, productId);
     }
 

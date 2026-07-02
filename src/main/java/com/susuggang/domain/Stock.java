@@ -21,6 +21,10 @@ public class Stock {
     @Column(nullable = false)
     private int quantity;
 
+    //낙관적 락
+    @Version
+    private Long version;
+
     @Builder
     private Stock(Long productId, int quantity) {
         this.productId = productId;

@@ -25,6 +25,7 @@ class OrderServiceConcurrencyTest {
     @Autowired ProductRepository productRepository;
     @Autowired StockRepository stockRepository;
     @Autowired OrderRepository orderRepository;
+    @Autowired OptimisticOrderFacade optimisticOrderFacade;
 
     Long productId;
 
@@ -104,6 +105,38 @@ class OrderServiceConcurrencyTest {
 
         int remaining = stockRepository.findByProductId(productId).orElseThrow().getQuantity();
 
+        assertThat(success.get()).isEqualTo(100);
+        assertThat(failed.get()).isEqualTo(100);
+        assertThat(remaining).isEqualTo(0);              // 음수면 oversell
+        assertThat(orderRepository.count()).isEqualTo(100);
+    }
+
+    @Test
+    void 낙관적락_동시에_200명이_주문해도_재고_100개까지만_팔린다() throws InterruptedException {
+        int requests = 200;
+        ExecutorService executor = Executors.newFixedThreadPool(32);
+        CountDownLatch latch = new CountDownLatch(requests);
+        AtomicInteger success = new AtomicInteger();
+        AtomicInteger failed = new AtomicInteger();
+
+        for (int i = 0; i < requests; i++) {
+            executor.submit(() -> {
+                try {
+                    optimisticOrderFacade.order(1L, productId);
+                    success.incrementAndGet();
+                } catch (Exception e) {
+                    failed.incrementAndGet();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        latch.await();
+        executor.shutdown();
+
+        int remaining = stockRepository.findByProductId(productId).orElseThrow().getQuantity();
+
+        System.out.println("재시도 횟수: " + optimisticOrderFacade.getRetryCount());
         assertThat(success.get()).isEqualTo(100);
         assertThat(failed.get()).isEqualTo(100);
         assertThat(remaining).isEqualTo(0);              // 음수면 oversell
