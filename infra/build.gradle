@@ -1,0 +1,11 @@
+plugins {
+	id 'java-library'
+}
+
+dependencies {
+	implementation project(':domain')
+	implementation project(':common')
+	// 리포지토리 인터페이스가 JpaRepository를 상속(공개 시그니처에 노출) → api로 전파
+	api 'org.springframework.boot:spring-boot-starter-data-jpa'
+	runtimeOnly 'org.postgresql:postgresql'
+}

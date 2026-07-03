@@ -17,7 +17,7 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
     //비관적 락
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select s from Stock s where s.productId = :productId")
-    Optional<Stock> findByProductIdForUpdate(Long productId); //차감용
+    Optional<Stock> findByProductIdForUpdate(@Param("productId") Long productId); //차감용
 
     //조건부 UPDATE
     @Modifying(clearAutomatically = true)

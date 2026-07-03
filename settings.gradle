@@ -1,1 +1,6 @@
 rootProject.name = 'susuggang'
+
+include 'api'
+include 'domain'
+include 'infra'
+include 'common'
