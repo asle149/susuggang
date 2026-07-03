@@ -1,0 +1,5 @@
+// 가장 안쪽 모듈 — B안: JPA 애노테이션 의존만 허용, 스프링 의존 금지
+dependencies {
+	implementation project(':common')
+	implementation 'jakarta.persistence:jakarta.persistence-api'
+}

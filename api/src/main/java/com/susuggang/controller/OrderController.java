@@ -22,6 +22,6 @@ public class OrderController {
     @ResponseStatus(HttpStatus.CREATED)
     public Long order(@AuthenticationPrincipal Long memberId,
                       @RequestBody OrderCreateRequest request) {
-        return orderService.orderWithConditionalUpdate(memberId, request.productId());
+        return orderService.orderWithConditionalUpdate(memberId, request.productId()); //조건부 UPDATE 확정
     }
 }
