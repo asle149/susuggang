@@ -3,9 +3,11 @@ package com.susuggang.service;
 import com.susuggang.domain.Order;
 import com.susuggang.domain.OrderStatus;
 import com.susuggang.domain.Stock;
+import com.susuggang.kafka.OrderCreatedEvent;
 import com.susuggang.repository.OrderRepository;
 import com.susuggang.repository.StockRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +17,7 @@ public class OrderService {
 
     private final StockRepository stockRepository;
     private final OrderRepository orderRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 비관적 락
     @Transactional
@@ -24,13 +27,16 @@ public class OrderService {
         return saveOrder(buyerId, productId);
     }
 
-    // 조건부 UPDATE
+    // 조건부 UPDATE (확정 전략)
     @Transactional
     public Long orderWithConditionalUpdate(Long buyerId, Long productId) {
         if (stockRepository.decreaseStock(productId) == 0) {
             throw new IllegalStateException("재고 부족");
         }
-        return saveOrder(buyerId, productId);
+        Long orderId = saveOrder(buyerId, productId);
+        // 여기서 카프카로 바로 안 나감 — 커밋 성공 후 AFTER_COMMIT 리스너가 발행 (유령 이벤트 방지)
+        eventPublisher.publishEvent(new OrderCreatedEvent(orderId, productId));
+        return orderId;
     }
 
     // 낙관적 락
