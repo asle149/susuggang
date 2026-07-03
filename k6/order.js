@@ -17,7 +17,6 @@ export const options = {
 };
 
 const BASE = __ENV.BASE_URL || 'http://localhost:8080';
-const MODE = __ENV.MODE || 'pessimistic'; // conditional | pessimistic | optimistic
 const PRODUCT_ID = __ENV.PRODUCT_ID;
 
 // setup은 사격 전에 딱 1번 실행 — 로그인해서 토큰을 받아 모든 VU에게 나눠준다
@@ -30,7 +29,7 @@ export function setup() {
 
 // 각 VU가 실행하는 본체
 export default function (data) {
-    const res = http.post(`${BASE}/orders?mode=${MODE}`,
+    const res = http.post(`${BASE}/orders`,
         JSON.stringify({ productId: Number(PRODUCT_ID) }),
         {
             headers: {
