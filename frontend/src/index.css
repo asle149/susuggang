@@ -121,11 +121,6 @@ main.wrap {
   font-size: 14px;
 }
 
-.search-icon {
-  color: var(--muted);
-  font-size: 14px;
-}
-
 .top-actions {
   display: flex;
   align-items: center;
