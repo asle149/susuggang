@@ -1,0 +1,11 @@
+.git
+.gradle
+**/build
+frontend
+**/node_modules
+docs
+k6
+.env
+.idea
+.claude
+*.md

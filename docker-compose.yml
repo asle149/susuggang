@@ -1,4 +1,36 @@
 services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      # 컨테이너끼리는 localhost가 아니라 서비스명으로 — 스프링 프로퍼티를 환경변수가 덮는다(relaxed binding)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/susuggang
+      SPRING_DATASOURCE_USERNAME: susuggang
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      postgres:
+        condition: service_healthy   # "떴다"가 아니라 "접속 받는다"까지 대기
+      kafka:
+        condition: service_started   # 카프카는 스프링이 알아서 재접속하므로 기동만 기다림
+
+  postgres:
+    image: postgres:16-alpine
+    # 호스트 포트 안 엶 — 로컬 brew Postgres(5432)와 충돌 방지, 컨테이너망 전용
+    environment:
+      POSTGRES_DB: susuggang
+      POSTGRES_USER: susuggang
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U susuggang -d susuggang"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   kafka:
     image: apache/kafka:3.9.1
     ports:
@@ -7,7 +39,7 @@ services:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
-      # 이중 리스너: 호스트(앱·k6)는 localhost:9092, 컨테이너(UI·내일 app)는 kafka:19092
+      # 이중 리스너: 호스트(앱·k6)는 localhost:9092, 컨테이너(UI·app)는 kafka:19092
       KAFKA_LISTENERS: PLAINTEXT://:9092,INTERNAL://:19092,CONTROLLER://:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:19092
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -26,3 +58,6 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
     depends_on:
       - kafka
+
+volumes:
+  pgdata:
