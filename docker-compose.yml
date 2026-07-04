@@ -4,6 +4,8 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # 컨테이너 기본 TZ는 UTC — LocalDateTime(expiresAt)이 브라우저(KST)와 어긋나지 않게 고정
+      TZ: Asia/Seoul
       # 컨테이너끼리는 localhost가 아니라 서비스명으로 — 스프링 프로퍼티를 환경변수가 덮는다(relaxed binding)
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/susuggang
       SPRING_DATASOURCE_USERNAME: susuggang
