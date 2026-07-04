@@ -12,11 +12,11 @@ class KafkaPingTest {
 
     @Test
     void 발행하면_컨슈머_로그가_찍힌다() throws InterruptedException {
-        producer.publish(new OrderCreatedEvent(1L, 1L));
-        producer.publish(new OrderCreatedEvent(10L, 1L));
-        producer.publish(new OrderCreatedEvent(11L, 1L));
-        producer.publish(new OrderCreatedEvent(12L, 2L));
-        producer.publish(new OrderCreatedEvent(13L, 3L));
+        producer.publish(new OrderCreatedEvent(1L, 1L, 1L));
+        producer.publish(new OrderCreatedEvent(10L, 1L, 1L));
+        producer.publish(new OrderCreatedEvent(11L, 1L, 1L));
+        producer.publish(new OrderCreatedEvent(12L, 2L, 1L));
+        producer.publish(new OrderCreatedEvent(13L, 3L, 1L));
 
         Thread.sleep(5000);
     }

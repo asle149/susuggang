@@ -45,7 +45,7 @@ public class OrderService {
         LocalDateTime expiresAt = LocalDateTime.now().plus(reservationTtl);
         Long orderId = saveOrder(buyerId, productId, OrderStatus.RESERVED, expiresAt);
         // 여기서 카프카로 바로 안 나감: 커밋 성공 후 AFTER_COMMIT 리스너가 발행 (유령 이벤트 방지)
-        eventPublisher.publishEvent(new OrderCreatedEvent(orderId, productId));
+        eventPublisher.publishEvent(new OrderCreatedEvent(orderId, productId, buyerId));
         return new OrderCreateResponse(orderId, expiresAt);
     }
 
