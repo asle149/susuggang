@@ -1,6 +1,7 @@
 package com.susuggang.controller;
 
 import com.susuggang.dto.OrderCreateRequest;
+import com.susuggang.dto.OrderCreateResponse;
 import com.susuggang.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,8 +22,8 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Long order(@AuthenticationPrincipal Long memberId,
-                      @RequestBody OrderCreateRequest request) {
+    public OrderCreateResponse order(@AuthenticationPrincipal Long memberId,
+                                     @RequestBody OrderCreateRequest request) {
         return orderService.orderWithConditionalUpdate(memberId, request.productId()); //조건부 UPDATE 확정
     }
 

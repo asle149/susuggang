@@ -3,6 +3,7 @@ package com.susuggang.service;
 import com.susuggang.domain.Order;
 import com.susuggang.domain.OrderStatus;
 import com.susuggang.domain.Stock;
+import com.susuggang.dto.OrderCreateResponse;
 import com.susuggang.kafka.OrderCreatedEvent;
 import com.susuggang.repository.OrderRepository;
 import com.susuggang.repository.StockRepository;
@@ -36,15 +37,15 @@ public class OrderService {
 
     // 조건부 UPDATE: 주문 즉시 차감, RESERVED로 선점 후 TTL 내 미결제면 복구
     @Transactional
-    public Long orderWithConditionalUpdate(Long buyerId, Long productId) {
+    public OrderCreateResponse orderWithConditionalUpdate(Long buyerId, Long productId) {
         if (stockRepository.decreaseStock(productId) == 0) {
             throw new IllegalStateException("재고 부족");
         }
-        Long orderId = saveOrder(buyerId, productId, OrderStatus.RESERVED,
-                LocalDateTime.now().plus(reservationTtl));
+        LocalDateTime expiresAt = LocalDateTime.now().plus(reservationTtl);
+        Long orderId = saveOrder(buyerId, productId, OrderStatus.RESERVED, expiresAt);
         // 여기서 카프카로 바로 안 나감: 커밋 성공 후 AFTER_COMMIT 리스너가 발행 (유령 이벤트 방지)
         eventPublisher.publishEvent(new OrderCreatedEvent(orderId, productId));
-        return orderId;
+        return new OrderCreateResponse(orderId, expiresAt);
     }
 
     // 낙관적 락
