@@ -23,4 +23,9 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
     @Modifying(clearAutomatically = true)
     @Query("update Stock s set s.quantity = s.quantity - 1 " + "where s.productId = :productId and s.quantity >= 1")
     int decreaseStock(@Param("productId") Long productID);
+
+    //예약 만료 복구: 전이 성공 건수만큼만 호출되므로 총량 초과 없음
+    @Modifying(clearAutomatically = true)
+    @Query("update Stock s set s.quantity = s.quantity + 1 where s.productId = :productId")
+    int increaseStock(@Param("productId") Long productId);
 }

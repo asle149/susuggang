@@ -5,6 +5,7 @@ import com.susuggang.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,5 +24,11 @@ public class OrderController {
     public Long order(@AuthenticationPrincipal Long memberId,
                       @RequestBody OrderCreateRequest request) {
         return orderService.orderWithConditionalUpdate(memberId, request.productId()); //조건부 UPDATE 확정
+    }
+
+    @PostMapping("/{orderId}/confirm")
+    public void confirm(@AuthenticationPrincipal Long memberId,
+                        @PathVariable Long orderId) {
+        orderService.confirmOrder(memberId, orderId);
     }
 }

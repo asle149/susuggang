@@ -21,3 +21,7 @@ spring:
     hibernate:
       ddl-auto: update     # @Entity 보고 테이블 자동 생성
     show-sql: true         # 실행 SQL 콘솔 출력
+
+order:
+  reservation-ttl: 10m     # 데모 때 1m으로
+
