@@ -440,6 +440,26 @@ main.wrap {
   color: var(--green-dark);
 }
 
+.note-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.note-msg {
+  margin: 0;
+  font-size: 14px;
+}
+
+.note-time {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .sheet-title {
   margin: 0 0 4px;
   font-size: 20px;

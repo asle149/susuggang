@@ -76,6 +76,9 @@ function App() {
   const [settlements, setSettlements] = useState([])
   const [settlementsState, setSettlementsState] = useState('loading')
 
+  const [notifications, setNotifications] = useState([])
+  const [notificationsState, setNotificationsState] = useState('loading')
+
   async function loadProducts() {
     setListState('loading')
     try {
@@ -91,6 +94,25 @@ function App() {
   useEffect(() => {
     loadProducts()
   }, [])
+
+  async function loadNotifications() {
+    setNotificationsState('loading')
+    try {
+      const res = await fetch(`${API}/notifications`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401 || res.status === 403) {
+        logout()
+        goto('login')
+        return
+      }
+      if (!res.ok) throw new Error()
+      setNotifications(await res.json())
+      setNotificationsState('ready')
+    } catch {
+      setNotificationsState('error')
+    }
+  }
 
   async function loadSettlements() {
     setSettlementsState('loading')
@@ -327,6 +349,16 @@ function App() {
                   type="button"
                   className="ghost-btn"
                   onClick={() => {
+                    goto('notifications')
+                    loadNotifications()
+                  }}
+                >
+                  🔔 알림
+                </button>
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => {
                     goto('settlements')
                     loadSettlements()
                   }}
@@ -498,6 +530,40 @@ function App() {
             >
               {view === 'signup' ? '이미 계정이 있다면 로그인' : '계정이 없다면 회원가입'}
             </button>
+          </section>
+        )}
+
+        {view === 'notifications' && (
+          <section className="sheet wide">
+            <h2 className="sheet-title">알림</h2>
+            <p className="sheet-sub">주문이 접수되면 알림이 도착합니다.</p>
+
+            {notificationsState === 'loading' && <p className="status-box">불러오는 중입니다.</p>}
+            {notificationsState === 'error' && (
+              <div className="status-box">
+                <p>알림을 불러오지 못했습니다.</p>
+                <button type="button" className="ghost-btn" onClick={loadNotifications}>
+                  다시 시도
+                </button>
+              </div>
+            )}
+            {notificationsState === 'ready' && notifications.length === 0 && (
+              <p className="status-box">도착한 알림이 없습니다.</p>
+            )}
+            {notificationsState === 'ready' &&
+              notifications.map(n => (
+                <div className="note-item" key={n.id}>
+                  <p className="note-msg">{n.message}</p>
+                  <span className="note-time">
+                    {new Date(n.createdAt).toLocaleString('ko-KR', {
+                      month: 'numeric',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              ))}
           </section>
         )}
 

@@ -28,11 +28,11 @@ class KafkaIdempotencyTest {
 
         try {
             Long orderId = System.currentTimeMillis();   // 실행마다 새 주문ID
-            producer.publish(new OrderCreatedEvent(orderId, 1L));
-            producer.publish(new OrderCreatedEvent(orderId, 1L));
+            producer.publish(new OrderCreatedEvent(orderId, 1L, 1L));
+            producer.publish(new OrderCreatedEvent(orderId, 1L, 1L));
             Thread.sleep(5000);
 
-            assertThat(count(logs, "알림 mock", orderId)).isEqualTo(1);   // 도착 2번이어도 효과는 1번
+            assertThat(count(logs, "알림 저장", orderId)).isEqualTo(1);   // 도착 2번이어도 효과는 1번
             assertThat(count(logs, "skip", orderId)).isEqualTo(1);        // 두 번째는 스킵
             assertThat(processedOrderRepository.existsById(orderId)).isTrue();
         } finally {
