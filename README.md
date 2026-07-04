@@ -13,7 +13,7 @@ docker compose up -d --build
 
 - API `localhost:8080` · Kafka UI `localhost:8085`
 - 프론트: `cd frontend && npm install && npm run dev` → `localhost:5173`
-- 데모 흐름: 가입 → 로그인 → 상품 등록(재고 N) → 주문(201) → 재고 소진(409) → 결제 확정(confirm) → 미확정 주문은 TTL 만료 후 재고 자동 복구
+- 데모 흐름: 가입 → 로그인 → 상품 등록(재고 N) → 주문(201) → 재고 소진(409) → 결제 확정(confirm) → 정산 내역 반영. 미확정 주문은 TTL 만료 후 재고 자동 복구
 
 ## 아키텍처
 
@@ -22,11 +22,12 @@ flowchart LR
   FE["React :5173"] -->|CORS| API["Spring Boot :8080"]
   API -->|"조건부 UPDATE"| DB[("PostgreSQL")]
   API -.->|"AFTER_COMMIT 발행"| K[("Kafka")]
-  K -.-> C["알림 컨슈머 (멱등 소비)"]
+  K -.->|order-created| C["알림 컨슈머 (멱등 소비)"]
+  K -.->|order-confirmed| S["정산 컨슈머 (멱등 기록)"]
   SCH["@Scheduled 만료 스캔"] --> DB
 ```
 
-재고 정합성은 DB 트랜잭션이 보장한다. Kafka는 정합성에 관여하지 않으며, 주문 트랜잭션 뒤의 부가 작업(알림)을 분리하는 역할만 담당한다.
+재고 정합성은 DB 트랜잭션이 보장한다. Kafka는 정합성에 관여하지 않으며, 주문 트랜잭션 뒤의 부가 작업(알림·정산)을 분리하는 역할만 담당한다.
 
 멀티모듈 구성 — 의존 방향은 domain을 향한다:
 
@@ -96,9 +97,10 @@ UPDATE orders SET status = 'CANCELED'
 
 ## Kafka
 
-동기 흐름(주문·재고)을 완성한 뒤 추가했다. 정합성은 DB 트랜잭션이 보장하므로 Kafka는 알림 등 부가 작업의 디커플링만 담당한다.
+동기 흐름(주문·재고)을 완성한 뒤 추가했다. 정합성은 DB 트랜잭션이 보장하므로 Kafka는 부가 작업의 디커플링만 담당한다.
 
+- **이벤트 2종 팬아웃**: 주문 생성(`order-created`) → 알림 컨슈머, 결제 확정(`order-confirmed`) → 정산 컨슈머. 컨슈머 그룹을 분리해(`susuggang-order` / `susuggang-settlement`) 오프셋과 장애가 서로 격리된다. 두 번째 컨슈머는 기존 패턴(AFTER_COMMIT 발행·멱등 소비) 재사용으로 추가돼, 이벤트 기반 확장의 비용이 낮음을 확인했다.
 - **AFTER_COMMIT 발행**: 트랜잭션 내부에서 발행하면 롤백된 주문의 이벤트가 발행될 수 있다(유령 이벤트). `@TransactionalEventListener(AFTER_COMMIT)`로 커밋 후에만 발행하며, 커밋 100건=발행 100·롤백 100건=발행 0으로 검증했다.
-- 트레이드오프: 커밋 후 발행 전에 프로세스가 종료되면 이벤트가 유실된다. 현재 이벤트는 알림 용도라 에러 로그로 감지하는 수준을 택했고, 유실 비용이 큰 이벤트가 생기면 outbox 패턴으로 전환한다.
-- **멱등 소비**: at-least-once에서 중복 배달은 정상 동작이다. 처리 장부(`ProcessedOrder`, orderId PK)로 `existsById` 1차 필터링, 동시 중복은 PK 제약으로 2차 방어한다.
+- 트레이드오프: 커밋 후 발행 전에 프로세스가 종료되면 이벤트가 유실된다. 현재 이벤트는 알림·mock 정산 기록 용도라 에러 로그로 감지하는 수준을 택했고, 유실 비용이 커지는 시점(정산이 실제 지급과 연결될 때)에 outbox 패턴으로 전환한다.
+- **멱등 소비**: at-least-once에서 중복 배달은 정상 동작이다. 처리 장부(`ProcessedOrder`·`Settlement`, orderId PK)로 `existsById` 1차 필터링, 동시 중복은 PK 제약으로 2차 방어한다.
 - 파티션 키는 `productId`. 상품 단위 순서 보장과 확장을 가정한 선택으로, 특정 상품 트래픽 집중 시 핫 파티션 가능성은 인지하고 있다.

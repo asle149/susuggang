@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 const API = 'http://localhost:8080'
 const TOKEN_KEY = 'susuggang.token'
 const EMAIL_KEY = 'susuggang.email'
+const ORDERS_KEY = 'susuggang.orders'
 
 const CATEGORIES = [
   { icon: '🧶', label: '뜨개' },
@@ -58,8 +59,22 @@ function App() {
   const [orderingId, setOrderingId] = useState(null)
   const [payingId, setPayingId] = useState(null)
   // productId → { orderId, expiresAt(ms), state: 'reserved'|'paid'|'expired', msg }
-  const [orderCards, setOrderCards] = useState({})
+  // localStorage에 보존 — 새로고침해도 예약(카운트다운)이 증발하지 않게
+  const [orderCards, setOrderCards] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(ORDERS_KEY)) ?? {}
+    } catch {
+      return {}
+    }
+  })
   const [now, setNow] = useState(Date.now())
+
+  useEffect(() => {
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(orderCards))
+  }, [orderCards])
+
+  const [settlements, setSettlements] = useState([])
+  const [settlementsState, setSettlementsState] = useState('loading')
 
   async function loadProducts() {
     setListState('loading')
@@ -76,6 +91,25 @@ function App() {
   useEffect(() => {
     loadProducts()
   }, [])
+
+  async function loadSettlements() {
+    setSettlementsState('loading')
+    try {
+      const res = await fetch(`${API}/settlements`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401 || res.status === 403) {
+        logout()
+        goto('login')
+        return
+      }
+      if (!res.ok) throw new Error()
+      setSettlements(await res.json())
+      setSettlementsState('ready')
+    } catch {
+      setSettlementsState('error')
+    }
+  }
 
   // 예약 카운트다운 tick — RESERVED 카드가 있을 때만 1초 주기
   const hasReserved = Object.values(orderCards).some(c => c.state === 'reserved')
@@ -112,8 +146,10 @@ function App() {
   function logout() {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(EMAIL_KEY)
+    localStorage.removeItem(ORDERS_KEY)
     setToken(null)
     setUserEmail(null)
+    setOrderCards({})
     goto('home')
   }
 
@@ -287,7 +323,16 @@ function App() {
                 <button type="button" className="pill-btn" onClick={() => goto('register')}>
                   + 작품 등록
                 </button>
-                {/* TODO(정산 세트 승격 시): 정산 내역 메뉴 자리 */}
+                <button
+                  type="button"
+                  className="ghost-btn"
+                  onClick={() => {
+                    goto('settlements')
+                    loadSettlements()
+                  }}
+                >
+                  정산 내역
+                </button>
                 <span className="account-email">{userEmail}</span>
                 <button type="button" className="ghost-btn" onClick={logout}>
                   로그아웃
@@ -453,6 +498,55 @@ function App() {
             >
               {view === 'signup' ? '이미 계정이 있다면 로그인' : '계정이 없다면 회원가입'}
             </button>
+          </section>
+        )}
+
+        {view === 'settlements' && (
+          <section className="sheet wide">
+            <h2 className="sheet-title">내 정산 내역</h2>
+            <p className="sheet-sub">내가 등록한 작품의 결제 확정 건이 기록됩니다.</p>
+
+            {settlementsState === 'loading' && <p className="status-box">불러오는 중입니다.</p>}
+            {settlementsState === 'error' && (
+              <div className="status-box">
+                <p>정산 내역을 불러오지 못했습니다.</p>
+                <button type="button" className="ghost-btn" onClick={loadSettlements}>
+                  다시 시도
+                </button>
+              </div>
+            )}
+            {settlementsState === 'ready' && settlements.length === 0 && (
+              <p className="status-box">아직 정산된 주문이 없습니다.</p>
+            )}
+            {settlementsState === 'ready' && settlements.length > 0 && (
+              <table className="stable">
+                <thead>
+                  <tr>
+                    <th>주문번호</th>
+                    <th>작품</th>
+                    <th>정산 금액</th>
+                    <th>정산 시각</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {settlements.map(s => (
+                    <tr key={s.orderId}>
+                      <td>#{s.orderId}</td>
+                      <td>{products.find(p => p.id === s.productId)?.title ?? `상품 ${s.productId}`}</td>
+                      <td className="amount">₩{s.amount.toLocaleString('ko-KR')}</td>
+                      <td>
+                        {new Date(s.settledAt).toLocaleString('ko-KR', {
+                          month: 'numeric',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </section>
         )}
 
