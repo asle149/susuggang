@@ -2,6 +2,7 @@ package com.susuggang.config;
 
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
@@ -10,10 +11,14 @@ import java.util.Date;
 @Component
 public class JwtTokenProvider {
 
-    // 실서비스는 환경변수/설정으로 뺄 것
-    private final SecretKey key = Keys.hmacShaKeyFor(
-            "susuggang-secret-key-change-me-please-at-least-32bytes".getBytes());
+    private final SecretKey key;
     private final long validityMs = 1000L * 60 * 60;
+
+    // 기본값은 로컬 개발용 — 컨테이너·서버는 JWT_SECRET 환경변수가 덮는다
+    public JwtTokenProvider(
+            @Value("${jwt.secret:susuggang-secret-key-change-me-please-at-least-32bytes}") String secret) {
+        this.key = Keys.hmacShaKeyFor(secret.getBytes());
+    }
 
     public String createToken(Long memberId) {
         Date now = new Date();
