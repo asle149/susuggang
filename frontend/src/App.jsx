@@ -328,7 +328,6 @@ function App() {
           </button>
 
           <label className="search">
-            <span className="search-icon">🔍</span>
             <input
               placeholder="작품 검색"
               value={query}
@@ -353,7 +352,7 @@ function App() {
                     loadNotifications()
                   }}
                 >
-                  🔔 알림
+                  알림
                 </button>
                 <button
                   type="button"
