@@ -412,6 +412,34 @@ main.wrap {
   box-shadow: 0 12px 32px rgba(25, 28, 26, 0.06);
 }
 
+.sheet.wide {
+  max-width: 680px;
+}
+
+.stable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.stable th {
+  text-align: left;
+  padding: 10px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  border-bottom: 1.5px solid var(--line);
+}
+
+.stable td {
+  padding: 12px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.stable .amount {
+  font-weight: 800;
+  color: var(--green-dark);
+}
+
 .sheet-title {
   margin: 0 0 4px;
   font-size: 20px;

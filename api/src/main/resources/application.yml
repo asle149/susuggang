@@ -23,5 +23,5 @@ spring:
     show-sql: true         # 실행 SQL 콘솔 출력
 
 order:
-  reservation-ttl: 10m     # 데모 때 1m으로
+  reservation-ttl: 1m      # 데모용 — 운영 기준은 10m
 

@@ -20,7 +20,9 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    # 호스트 포트 안 엶 — 로컬 brew Postgres(5432)와 충돌 방지, 컨테이너망 전용
+    # brew Postgres(5432)와 충돌하지 않게 5433으로 노출 — IDE에서 컨테이너 DB 확인용
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_DB: susuggang
       POSTGRES_USER: susuggang

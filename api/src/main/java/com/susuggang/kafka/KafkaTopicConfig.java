@@ -13,4 +13,9 @@ public class KafkaTopicConfig {
     public NewTopic orderCreated() {
         return TopicBuilder.name("order-created").partitions(3).replicas(1).build();
     }
+
+    @Bean
+    public NewTopic orderConfirmed() {
+        return TopicBuilder.name("order-confirmed").partitions(3).replicas(1).build();
+    }
 }

@@ -4,6 +4,7 @@ import com.susuggang.domain.Order;
 import com.susuggang.domain.OrderStatus;
 import com.susuggang.domain.Stock;
 import com.susuggang.dto.OrderCreateResponse;
+import com.susuggang.kafka.OrderConfirmedEvent;
 import com.susuggang.kafka.OrderCreatedEvent;
 import com.susuggang.repository.OrderRepository;
 import com.susuggang.repository.StockRepository;
@@ -62,6 +63,9 @@ public class OrderService {
         if (orderRepository.confirmReserved(orderId, buyerId, LocalDateTime.now()) == 0) {
             throw new IllegalStateException("확정할 수 없는 주문");
         }
+        // 정산 팬아웃 — 커밋 성공 후 AFTER_COMMIT 리스너가 발행
+        Long productId = orderRepository.findById(orderId).orElseThrow().getProductId();
+        eventPublisher.publishEvent(new OrderConfirmedEvent(orderId, productId));
     }
 
     // 만료 복구: 건별 트랜잭션: 전이+재고복구만 원자면 충분, 한 건 실패가 나머지 복구를 막지 않게
