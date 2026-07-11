@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
-const API = 'http://localhost:8080'
+// 배포 빌드는 VITE_API_URL=''(같은 오리진 상대경로), 로컬 개발은 기본값 유지
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 const TOKEN_KEY = 'susuggang.token'
 const EMAIL_KEY = 'susuggang.email'
 const ORDERS_KEY = 'susuggang.orders'
