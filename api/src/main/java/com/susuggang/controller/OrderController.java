@@ -1,5 +1,6 @@
 package com.susuggang.controller;
 
+import com.susuggang.dto.CommonResponse;
 import com.susuggang.dto.OrderCreateRequest;
 import com.susuggang.dto.OrderCreateResponse;
 import com.susuggang.service.OrderService;
@@ -22,14 +23,17 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public OrderCreateResponse order(@AuthenticationPrincipal Long memberId,
-                                     @RequestBody OrderCreateRequest request) {
-        return orderService.orderWithConditionalUpdate(memberId, request.productId()); //조건부 UPDATE 확정
+    public CommonResponse<OrderCreateResponse> order(@AuthenticationPrincipal Long memberId,
+                                                     @RequestBody OrderCreateRequest request){
+        return CommonResponse.success(
+                orderService.orderWithConditionalUpdate(memberId, request.productId())
+        );
     }
 
     @PostMapping("/{orderId}/confirm")
-    public void confirm(@AuthenticationPrincipal Long memberId,
+    public CommonResponse<Void> confirm(@AuthenticationPrincipal Long memberId,
                         @PathVariable Long orderId) {
         orderService.confirmOrder(memberId, orderId);
+        return CommonResponse.ok();
     }
 }

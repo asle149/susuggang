@@ -40,6 +40,11 @@ function memberIdFromToken(token) {
   }
 }
 
+// CommonResponse 봉투 { status, msg, value }에서 실제 데이터(value)만 꺼낸다
+async function readValue(res) {
+  return (await res.json()).value
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY))
   const [userEmail, setUserEmail] = useState(() => localStorage.getItem(EMAIL_KEY))
@@ -84,7 +89,7 @@ function App() {
     try {
       const res = await fetch(`${API}/products`)
       if (!res.ok) throw new Error()
-      setProducts(await res.json())
+      setProducts(await readValue(res))
       setListState('ready')
     } catch {
       setListState('error')
@@ -107,7 +112,7 @@ function App() {
         return
       }
       if (!res.ok) throw new Error()
-      setNotifications(await res.json())
+      setNotifications(await readValue(res))
       setNotificationsState('ready')
     } catch {
       setNotificationsState('error')
@@ -126,7 +131,7 @@ function App() {
         return
       }
       if (!res.ok) throw new Error()
-      setSettlements(await res.json())
+      setSettlements(await readValue(res))
       setSettlementsState('ready')
     } catch {
       setSettlementsState('error')
@@ -195,7 +200,7 @@ function App() {
         setForm({ email: form.email })
         setFormNotice('가입이 완료되었습니다. 로그인해 주세요.')
       } else {
-        const data = await res.json()
+        const data = await readValue(res)
         localStorage.setItem(TOKEN_KEY, data.token)
         localStorage.setItem(EMAIL_KEY, form.email)
         setToken(data.token)
@@ -254,7 +259,7 @@ function App() {
         body: JSON.stringify({ productId: product.id }),
       })
       if (res.status === 201) {
-        const data = await res.json()
+        const data = await readValue(res)
         setOrderCards(prev => ({
           ...prev,
           [product.id]: {

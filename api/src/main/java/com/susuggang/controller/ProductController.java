@@ -1,5 +1,6 @@
 package com.susuggang.controller;
 
+import com.susuggang.dto.CommonResponse;
 import com.susuggang.dto.ProductCreateRequest;
 import com.susuggang.dto.ProductResponse;
 import com.susuggang.service.ProductService;
@@ -16,17 +17,23 @@ public class ProductController {
     private final ProductService productService;
 
     @PostMapping
-    public Long create(@RequestBody ProductCreateRequest request) {
-        return productService.create(request);
+    public CommonResponse<Long> create(@RequestBody ProductCreateRequest request){
+        return CommonResponse.success(
+                productService.create(request)
+        );
     }
 
     @GetMapping
-    public List<ProductResponse> list() {
-        return productService.findAll();
+    public CommonResponse<List<ProductResponse>> list(){
+        return CommonResponse.success(
+                productService.findAll()
+        );
     }
 
     @GetMapping("/{id}")
-    public ProductResponse detail(@PathVariable Long id) {
-        return productService.findOne(id);
+    public CommonResponse<ProductResponse> detail(@PathVariable Long id){
+        return CommonResponse.success(
+                productService.findOne(id)
+        );
     }
 }
