@@ -1,5 +1,6 @@
 package com.susuggang.controller;
 
+import com.susuggang.dto.CommonResponse;
 import com.susuggang.dto.LoginRequest;
 import com.susuggang.dto.SignupRequest;
 import com.susuggang.dto.TokenResponse;
@@ -18,12 +19,16 @@ public class AuthController {
     private final AuthService authService;
 
     @PostMapping("/signup")
-    public Long signup(@RequestBody SignupRequest request) {
-        return authService.signup(request.email(), request.password());
+    public CommonResponse<Long> signup(@RequestBody SignupRequest request) {
+        return CommonResponse.success(
+                authService.signup(request.email(), request.password())
+        );
     }
 
     @PostMapping("/login")
-    public TokenResponse login(@RequestBody LoginRequest request) {
-        return new TokenResponse(authService.login(request.email(), request.password()));
+    public CommonResponse<TokenResponse> login(@RequestBody LoginRequest request) {
+        return CommonResponse.success(
+                new TokenResponse(authService.login(request.email(), request.password()))
+        );
     }
 }

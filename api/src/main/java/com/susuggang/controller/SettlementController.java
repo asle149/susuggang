@@ -1,5 +1,6 @@
 package com.susuggang.controller;
 
+import com.susuggang.dto.CommonResponse;
 import com.susuggang.dto.SettlementResponse;
 import com.susuggang.service.SettlementService;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +19,9 @@ public class SettlementController {
     private final SettlementService settlementService;
 
     @GetMapping
-    public List<SettlementResponse> my(@AuthenticationPrincipal Long memberId) {
-        return settlementService.findMine(memberId);
+    public CommonResponse<List<SettlementResponse>> my(@AuthenticationPrincipal Long memberId){
+        return CommonResponse.success(
+                settlementService.findMine(memberId)
+        );
     }
 }

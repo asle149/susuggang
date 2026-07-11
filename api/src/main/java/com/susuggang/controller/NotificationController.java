@@ -1,5 +1,6 @@
 package com.susuggang.controller;
 
+import com.susuggang.dto.CommonResponse;
 import com.susuggang.dto.NotificationResponse;
 import com.susuggang.service.NotificationService;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +19,7 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     @GetMapping
-    public List<NotificationResponse> my(@AuthenticationPrincipal Long memberId) {
-        return notificationService.findMine(memberId);
+    public CommonResponse<List<NotificationResponse>> my(@AuthenticationPrincipal Long memberId) {
+        return CommonResponse.success(notificationService.findMine(memberId));
     }
 }
