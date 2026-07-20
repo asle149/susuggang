@@ -5,6 +5,8 @@ const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8080'
 const TOKEN_KEY = 'susuggang.token'
 const EMAIL_KEY = 'susuggang.email'
 const ORDERS_KEY = 'susuggang.orders'
+// 토스 문서용 공개 테스트 클라이언트 키(비밀 아님) — 본인 키 발급 후엔 VITE_TOSS_CLIENT_KEY로 교체
+const TOSS_CLIENT_KEY = import.meta.env.VITE_TOSS_CLIENT_KEY ?? 'test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm'
 
 const CATEGORIES = [
   { icon: '🧶', label: '뜨개' },
@@ -64,6 +66,9 @@ function App() {
 
   const [orderingId, setOrderingId] = useState(null)
   const [payingId, setPayingId] = useState(null)
+  // 토스 결제위젯: 결제 진행 중인 상품과 위젯 인스턴스 (view === 'payment')
+  const [payTarget, setPayTarget] = useState(null)
+  const [tossWidgets, setTossWidgets] = useState(null)
   // productId → { orderId, expiresAt(ms), state: 'reserved'|'paid'|'expired', msg }
   // localStorage에 보존 — 새로고침해도 예약(카운트다운)이 증발하지 않게
   const [orderCards, setOrderCards] = useState(() => {
@@ -289,32 +294,107 @@ function App() {
     }
   }
 
-  async function handleConfirm(product) {
+  // "결제하기" → 토스 결제위젯 화면으로 (mock confirm 대체 — 실제 확정은 successUrl 복귀 후 서버 승인이)
+  function handleConfirm(product) {
     const card = orderCards[product.id]
     if (!card?.orderId) return
-    setPayingId(product.id)
+    setPayTarget(product)
+    setTossWidgets(null)
+    goto('payment')
+  }
+
+  // 결제 화면 진입 시 위젯 렌더 (결제수단 UI + 약관 UI)
+  useEffect(() => {
+    if (view !== 'payment' || !payTarget) return
+    let cancelled = false
+    async function render() {
+      const toss = window.TossPayments(TOSS_CLIENT_KEY)
+      const widgets = toss.widgets({ customerKey: window.TossPayments.ANONYMOUS })
+      await widgets.setAmount({ currency: 'KRW', value: payTarget.price })
+      await Promise.all([
+        widgets.renderPaymentMethods({ selector: '#toss-payment-method', variantKey: 'DEFAULT' }),
+        widgets.renderAgreement({ selector: '#toss-agreement', variantKey: 'AGREEMENT' }),
+      ])
+      if (!cancelled) setTossWidgets(widgets)
+    }
+    render().catch(() => setFormError('결제창을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.'))
+    return () => {
+      cancelled = true
+    }
+  }, [view, payTarget]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function requestTossPayment() {
+    const card = orderCards[payTarget.id]
+    if (!tossWidgets || !card?.orderId) return
+    const base = `${window.location.origin}${window.location.pathname}`
     try {
-      const res = await fetch(`${API}/orders/${card.orderId}/confirm`, {
+      await tossWidgets.requestPayment({
+        // 토스 쪽 주문번호(문자열, 유니크) — 우리 주문 PK는 successUrl 쿼리(susuOrder)로 따로 돌려받는다
+        orderId: `susuggang-${card.orderId}-${Date.now()}`,
+        orderName: payTarget.title,
+        successUrl: `${base}?susuOrder=${card.orderId}&susuProduct=${payTarget.id}`,
+        failUrl: `${base}?susuFail=1&susuProduct=${payTarget.id}`,
+      })
+    } catch {
+      setFormError('결제를 취소했습니다.')
+    }
+  }
+
+  // successUrl/failUrl 복귀 처리 — 쿼리에 우리 파라미터가 있으면 서버 승인 호출
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (!params.get('susuProduct')) return
+    window.history.replaceState({}, '', window.location.pathname)
+    const productId = Number(params.get('susuProduct'))
+    if (params.get('susuFail')) {
+      setOrderCards(prev => ({
+        ...prev,
+        [productId]: { ...prev[productId], msg: `결제에 실패했습니다 (${params.get('code') ?? '취소'})` },
+      }))
+      return
+    }
+    confirmTossPayment(productId, params)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function confirmTossPayment(productId, params) {
+    setPayingId(productId)
+    try {
+      const res = await fetch(`${API}/payments/confirm`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          orderId: Number(params.get('susuOrder')),
+          tossOrderId: params.get('orderId'),
+          paymentKey: params.get('paymentKey'),
+          amount: Number(params.get('amount')),
+        }),
       })
       if (res.ok) {
         setOrderCards(prev => ({
           ...prev,
-          [product.id]: { state: 'paid', msg: `결제 완료 · 주문번호 ${card.orderId}` },
+          [productId]: { state: 'paid', msg: `결제 완료 · 주문번호 ${params.get('susuOrder')}` },
         }))
       } else if (res.status === 409) {
         setOrderCards(prev => ({
           ...prev,
-          [product.id]: { state: 'expired', msg: '결제 기한이 지났습니다 · 재고는 곧 복구됩니다' },
+          [productId]: { state: 'expired', msg: '결제 기한이 지났습니다 · 재고는 곧 복구됩니다' },
         }))
         loadProducts()
       } else if (res.status === 401 || res.status === 403) {
         logout()
         goto('login')
+      } else {
+        const body = await res.json().catch(() => null)
+        setOrderCards(prev => ({
+          ...prev,
+          [productId]: { ...prev[productId], msg: body?.msg ?? '결제 승인에 실패했습니다' },
+        }))
       }
     } catch {
-      /* 네트워크 오류 — 버튼 상태 유지, 재시도 가능 */
+      setOrderCards(prev => ({
+        ...prev,
+        [productId]: { ...prev[productId], msg: '서버에 연결할 수 없습니다 · 다시 시도해 주세요' },
+      }))
     } finally {
       setPayingId(null)
     }
@@ -493,6 +573,29 @@ function App() {
               </>
             )}
           </>
+        )}
+
+        {view === 'payment' && payTarget && (
+          <section className="sheet">
+            <h2 className="sheet-title">결제</h2>
+            <p className="sheet-sub">
+              {payTarget.title} · ₩{payTarget.price.toLocaleString('ko-KR')}
+            </p>
+            <div id="toss-payment-method" />
+            <div id="toss-agreement" />
+            <button
+              type="button"
+              className="sheet-submit"
+              disabled={!tossWidgets}
+              onClick={requestTossPayment}
+            >
+              {tossWidgets ? '결제하기' : '결제창 불러오는 중'}
+            </button>
+            {formError && <p className="sheet-error">{formError}</p>}
+            <button type="button" className="text-btn sheet-switch" onClick={() => goto('home')}>
+              돌아가기 (예약은 유지됩니다)
+            </button>
+          </section>
         )}
 
         {(view === 'login' || view === 'signup') && (

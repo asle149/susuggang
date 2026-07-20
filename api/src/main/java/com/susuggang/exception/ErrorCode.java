@@ -23,7 +23,9 @@ public enum ErrorCode {
     ORDER_NOT_FOUND("SSG20003", HttpStatus.NOT_FOUND, "주문을 찾을 수 없습니다"),
     ORDER_NOT_CONFIRMABLE("SSG20004", HttpStatus.CONFLICT, "확정할 수 없는 주문"),
 
-    // 결제 (SSG3xxxx) — 토스 연동(P2~P4)에서 채운다
+    // 결제 (SSG3xxxx)
+    PAYMENT_AMOUNT_MISMATCH("SSG30001", HttpStatus.BAD_REQUEST, "결제 금액이 주문 금액과 다릅니다"),
+    PAYMENT_CONFIRM_FAILED("SSG30002", HttpStatus.BAD_GATEWAY, "결제 승인에 실패했습니다"),
 
     // 정책 (SSG9xxxx)
     FORCE_UPDATE("SSG99999", HttpStatus.OK, "앱 업데이트가 필요합니다");   // 클라이언트와 "이 코드 = 강제 업데이트 화면" 사전 약속용 예약
