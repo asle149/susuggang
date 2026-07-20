@@ -10,6 +10,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.kafka:spring-kafka'
+	implementation 'net.logstash.logback:logstash-logback-encoder:8.1'   // 운영 JSON 로그 인코더 (ELK 파싱용)
 
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'

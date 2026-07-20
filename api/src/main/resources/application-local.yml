@@ -1,0 +1,16 @@
+# 로컬 개발 — brew Postgres + 로컬 카프카 (로그 포맷 분기는 logback-spring.xml)
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/susuggang
+    username: sol          # 맥 사용자명 (brew Postgres 기본 롤)
+    password:              # 기본값: 없음
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      properties:
+        spring.json.trusted.packages: "*"    # 로컬 편의 — 운영은 실제 패키지로 한정
+  jpa:
+    show-sql: true         # 실행 SQL 콘솔 출력
+
+order:
+  reservation-ttl: 1m      # 데모용 짧은 TTL
