@@ -15,3 +15,8 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update     # @Entity 보고 테이블 자동 생성
+
+toss:
+  base-url: https://api.tosspayments.com
+  # 기본값 = 토스 문서에 공개된 테스트 키(비밀 아님) — 본인 키 발급 후엔 TOSS_SECRET_KEY 환경변수로 교체
+  secret-key: ${TOSS_SECRET_KEY:test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6}
