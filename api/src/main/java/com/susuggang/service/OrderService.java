@@ -4,6 +4,8 @@ import com.susuggang.domain.Order;
 import com.susuggang.domain.OrderStatus;
 import com.susuggang.domain.Stock;
 import com.susuggang.dto.OrderCreateResponse;
+import com.susuggang.exception.BusinessException;
+import com.susuggang.exception.ErrorCode;
 import com.susuggang.kafka.OrderConfirmedEvent;
 import com.susuggang.kafka.OrderCreatedEvent;
 import com.susuggang.repository.OrderRepository;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -31,7 +34,8 @@ public class OrderService {
     // 비관적 락
     @Transactional
     public Long orderWithLock(Long buyerId, Long productId) {
-        Stock stock = stockRepository.findByProductIdForUpdate(productId).orElseThrow();
+        Stock stock = stockRepository.findByProductIdForUpdate(productId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         stock.decrease();
         return saveOrder(buyerId, productId, OrderStatus.COMPLETED, null);
     }
@@ -40,7 +44,7 @@ public class OrderService {
     @Transactional
     public OrderCreateResponse orderWithConditionalUpdate(Long buyerId, Long productId) {
         if (stockRepository.decreaseStock(productId) == 0) {
-            throw new IllegalStateException("재고 부족");
+            throw new BusinessException(ErrorCode.OUT_OF_STOCK);
         }
         LocalDateTime expiresAt = LocalDateTime.now().plus(reservationTtl);
         Long orderId = saveOrder(buyerId, productId, OrderStatus.RESERVED, expiresAt);
@@ -52,7 +56,8 @@ public class OrderService {
     // 낙관적 락
     @Transactional
     public Long orderOptimisticOnce(Long buyerId, Long productId){
-        Stock stock = stockRepository.findByProductId(productId).orElseThrow();
+        Stock stock = stockRepository.findByProductId(productId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_NOT_FOUND));
         stock.decrease();
         return saveOrder(buyerId, productId, OrderStatus.COMPLETED, null);
     }
@@ -61,10 +66,12 @@ public class OrderService {
     @Transactional
     public void confirmOrder(Long buyerId, Long orderId) {
         if (orderRepository.confirmReserved(orderId, buyerId, LocalDateTime.now()) == 0) {
-            throw new IllegalStateException("확정할 수 없는 주문");
+            // 만료·타인 주문·중복 확정이 전부 이 한 지점으로 모임 — 어느 주문인지는 errorInfo로
+            throw new BusinessException(ErrorCode.ORDER_NOT_CONFIRMABLE, Map.of("orderId", orderId));
         }
         // 정산 팬아웃 — 커밋 성공 후 AFTER_COMMIT 리스너가 발행
-        Long productId = orderRepository.findById(orderId).orElseThrow().getProductId();
+        Long productId = orderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND)).getProductId();
         eventPublisher.publishEvent(new OrderConfirmedEvent(orderId, productId));
     }
 

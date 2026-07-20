@@ -3,6 +3,8 @@ package com.susuggang.service;
 import com.susuggang.config.JwtTokenProvider;
 import com.susuggang.domain.Member;
 import com.susuggang.domain.Role;
+import com.susuggang.exception.BusinessException;
+import com.susuggang.exception.ErrorCode;
 import com.susuggang.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -30,9 +32,9 @@ public class AuthService {
 
     public String login(String email, String password) {
         Member member = memberRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("이메일 또는 비밀번호가 틀렸습니다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.LOGIN_FAILED));
         if (!passwordEncoder.matches(password, member.getPassword())) {
-            throw new IllegalArgumentException("이메일 또는 비밀번호가 틀렸습니다");
+            throw new BusinessException(ErrorCode.LOGIN_FAILED);
         }
         return tokenProvider.createToken(member.getId());
     }

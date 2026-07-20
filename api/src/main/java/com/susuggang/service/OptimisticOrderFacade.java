@@ -1,5 +1,7 @@
 package com.susuggang.service;
 
+import com.susuggang.exception.BusinessException;
+import com.susuggang.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
@@ -21,7 +23,7 @@ public class OptimisticOrderFacade {
                 retryCount.incrementAndGet();
             }
         }
-        throw new IllegalStateException("재고 부족");
+        throw new BusinessException(ErrorCode.OUT_OF_STOCK);
     }
 
     public int getRetryCount(){
