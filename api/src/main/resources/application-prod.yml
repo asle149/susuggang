@@ -1,0 +1,15 @@
+# 운영(도커 컴포즈) — 시크릿(DB 비밀번호·JWT)은 yml에 두지 않고 환경변수로만 주입
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/susuggang    # 컨테이너끼리는 서비스명으로
+    username: susuggang
+  kafka:
+    bootstrap-servers: kafka:19092
+    consumer:
+      properties:
+        spring.json.trusted.packages: "com.susuggang.kafka"    # 역직렬화 허용을 이벤트 패키지로 한정
+  jpa:
+    show-sql: false        # 운영 로그에 SQL 전량 출력 금지
+
+order:
+  reservation-ttl: 10m     # 운영 기준 — 시연 땐 환경변수로 덮어 단축

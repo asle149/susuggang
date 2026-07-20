@@ -1,8 +1,9 @@
 spring:
   application:
     name: susuggang
+  profiles:
+    default: local       # 프로파일 미지정(IDE 실행·테스트) = local, 운영은 컴포즈가 prod 지정
   kafka:
-    bootstrap-servers: localhost:9092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -11,17 +12,6 @@ spring:
       auto-offset-reset: earliest    # 그룹이 처음 붙으면 맨 앞부터 (데모에서 발행분 안 놓치게)
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "*"    # 데모용 전체 허용, 운영이면 실제 패키지만
-  datasource:
-    url: jdbc:postgresql://localhost:5432/susuggang
-    username: sol          # 맥 사용자명 (brew Postgres 기본 롤)
-    password:              # 기본값: 없음
   jpa:
     hibernate:
       ddl-auto: update     # @Entity 보고 테이블 자동 생성
-    show-sql: true         # 실행 SQL 콘솔 출력
-
-order:
-  reservation-ttl: 1m      # 데모용 — 운영 기준은 10m
-

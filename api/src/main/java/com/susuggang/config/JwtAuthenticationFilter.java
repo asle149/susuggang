@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -26,6 +27,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 Long memberId = tokenProvider.getMemberId(header.substring(7));
                 var authentication = new UsernamePasswordAuthenticationToken(memberId, null, List.of());
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+                MDC.put("memberId", String.valueOf(memberId));   // 이 요청의 모든 로그에 유저 식별자 — MdcLoggingFilter가 요청 끝에 일괄 clear
             } catch (Exception e) {
                 SecurityContextHolder.clearContext();
             }
