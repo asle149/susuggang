@@ -5,6 +5,8 @@ import com.susuggang.domain.OrderStatus;
 import com.susuggang.domain.Product;
 import com.susuggang.domain.ProductStatus;
 import com.susuggang.domain.Stock;
+import com.susuggang.exception.BusinessException;
+import com.susuggang.exception.ErrorCode;
 import com.susuggang.repository.OrderRepository;
 import com.susuggang.repository.ProductRepository;
 import com.susuggang.repository.StockRepository;
@@ -89,7 +91,8 @@ class OrderReservationTest {
         Long orderId = saveReserved(LocalDateTime.now().minusMinutes(1));
 
         assertThatThrownBy(() -> orderService.confirmOrder(1L, orderId))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ORDER_NOT_CONFIRMABLE);
         assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
                 .isNotEqualTo(OrderStatus.COMPLETED);
     }
@@ -99,7 +102,8 @@ class OrderReservationTest {
         Long orderId = saveReserved(LocalDateTime.now().plusMinutes(10));
 
         assertThatThrownBy(() -> orderService.confirmOrder(2L, orderId))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ORDER_NOT_CONFIRMABLE);
         assertThat(orderRepository.findById(orderId).orElseThrow().getStatus())
                 .isEqualTo(OrderStatus.RESERVED);
     }
