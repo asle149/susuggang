@@ -1,0 +1,18 @@
+# 로그백이 남긴 JSON 파일을 한 줄=한 이벤트로 읽어 ES로 배송
+filebeat.inputs:
+  - type: filestream
+    id: susuggang-app
+    paths:
+      - /var/log/susuggang/app.log
+    parsers:
+      - ndjson:
+          target: ""            # JSON 필드(traceId·memberId 포함)를 최상위로 펼침 — Kibana에서 키로 검색
+          overwrite_keys: true
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "susuggang-logs-%{+yyyy.MM.dd}"
+
+setup.template.name: "susuggang-logs"
+setup.template.pattern: "susuggang-logs-*"
+setup.ilm.enabled: false
