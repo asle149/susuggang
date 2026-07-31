@@ -63,5 +63,34 @@ services:
     depends_on:
       - kafka
 
+  # --- ELK: JSON 로그 파일(./logs) → Filebeat → Elasticsearch → Kibana 검색 ---
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.16.1
+    environment:
+      - discovery.type=single-node          # 로컬 데모용 단일 노드
+      - xpack.security.enabled=false        # 로컬 한정 — 운영이면 보안 켜고 계정 발급
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m      # 기본 힙이 커서 로컬에선 제한
+    ports:
+      - "9200:9200"
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.16.1
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      - elasticsearch
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.16.1
+    user: root
+    command: filebeat -e --strict.perms=false
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./logs:/var/log/susuggang:ro        # 앱이 쌓는 JSON 로그를 읽기 전용으로
+    depends_on:
+      - elasticsearch
+
 volumes:
   pgdata:
