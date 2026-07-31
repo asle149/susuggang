@@ -5,7 +5,7 @@ import com.susuggang.dto.PaymentConfirmRequest;
 import com.susuggang.payment.PaymentService;
 import com.susuggang.payment.TossPaymentResponse;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.susuggang.config.LoginMember;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,7 +19,7 @@ public class PaymentController {
     private final PaymentService paymentService;
 
     @PostMapping("/confirm")
-    public CommonResponse<TossPaymentResponse> confirm(@AuthenticationPrincipal Long memberId,
+    public CommonResponse<TossPaymentResponse> confirm(@LoginMember Long memberId,
                                                        @RequestBody PaymentConfirmRequest request) {
         return CommonResponse.success(
                 paymentService.confirmPayment(memberId, request.orderId(), request.tossOrderId(),

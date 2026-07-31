@@ -1,5 +1,6 @@
 package com.susuggang.controller;
 
+import com.susuggang.config.LoginMember;
 import com.susuggang.dto.CommonResponse;
 import com.susuggang.dto.ProductCreateRequest;
 import com.susuggang.dto.ProductResponse;
@@ -17,9 +18,10 @@ public class ProductController {
     private final ProductService productService;
 
     @PostMapping
-    public CommonResponse<Long> create(@RequestBody ProductCreateRequest request){
+    public CommonResponse<Long> create(@LoginMember Long sellerId,
+                                       @RequestBody ProductCreateRequest request){
         return CommonResponse.success(
-                productService.create(request)
+                productService.create(sellerId, request)
         );
     }
 

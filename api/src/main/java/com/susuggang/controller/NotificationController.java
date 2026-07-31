@@ -4,7 +4,7 @@ import com.susuggang.dto.CommonResponse;
 import com.susuggang.dto.NotificationResponse;
 import com.susuggang.service.NotificationService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.susuggang.config.LoginMember;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,7 +19,7 @@ public class NotificationController {
     private final NotificationService notificationService;
 
     @GetMapping
-    public CommonResponse<List<NotificationResponse>> my(@AuthenticationPrincipal Long memberId) {
+    public CommonResponse<List<NotificationResponse>> my(@LoginMember Long memberId) {
         return CommonResponse.success(notificationService.findMine(memberId));
     }
 }
