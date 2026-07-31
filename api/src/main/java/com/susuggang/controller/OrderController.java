@@ -6,7 +6,7 @@ import com.susuggang.dto.OrderCreateResponse;
 import com.susuggang.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.susuggang.config.LoginMember;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,7 +23,7 @@ public class OrderController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public CommonResponse<OrderCreateResponse> order(@AuthenticationPrincipal Long memberId,
+    public CommonResponse<OrderCreateResponse> order(@LoginMember Long memberId,
                                                      @RequestBody OrderCreateRequest request){
         return CommonResponse.success(
                 orderService.orderWithConditionalUpdate(memberId, request.productId())
@@ -31,7 +31,7 @@ public class OrderController {
     }
 
     @PostMapping("/{orderId}/confirm")
-    public CommonResponse<Void> confirm(@AuthenticationPrincipal Long memberId,
+    public CommonResponse<Void> confirm(@LoginMember Long memberId,
                         @PathVariable Long orderId) {
         orderService.confirmOrder(memberId, orderId);
         return CommonResponse.ok();

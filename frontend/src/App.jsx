@@ -234,7 +234,6 @@ function App() {
           title: form.title,
           price: Number(form.price),
           quantity: Number(form.quantity),
-          sellerId: memberIdFromToken(token),
         }),
       })
       if (res.status === 401 || res.status === 403) {

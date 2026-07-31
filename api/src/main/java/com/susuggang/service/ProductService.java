@@ -24,11 +24,11 @@ public class ProductService {
     private final StockRepository stockRepository;
 
     @Transactional
-    public Long create(ProductCreateRequest request) {
+    public Long create(Long sellerId, ProductCreateRequest request) {
         Product product = productRepository.save(Product.builder()
                 .title(request.title())
                 .price(request.price())
-                .sellerId(request.sellerId())
+                .sellerId(sellerId)
                 .status(ProductStatus.ON_SALE)
                 .build());
         stockRepository.save(Stock.builder()

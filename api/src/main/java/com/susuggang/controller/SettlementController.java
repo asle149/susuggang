@@ -4,7 +4,7 @@ import com.susuggang.dto.CommonResponse;
 import com.susuggang.dto.SettlementResponse;
 import com.susuggang.service.SettlementService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import com.susuggang.config.LoginMember;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,7 +19,7 @@ public class SettlementController {
     private final SettlementService settlementService;
 
     @GetMapping
-    public CommonResponse<List<SettlementResponse>> my(@AuthenticationPrincipal Long memberId){
+    public CommonResponse<List<SettlementResponse>> my(@LoginMember Long memberId){
         return CommonResponse.success(
                 settlementService.findMine(memberId)
         );
