@@ -1,6 +1,7 @@
 package com.susuggang.payment;
 
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -10,4 +11,8 @@ public interface TossPaymentClient {
 
     @PostMapping("/v1/payments/confirm")
     TossPaymentResponse confirm(@RequestBody TossConfirmRequest request);
+
+    @PostMapping("/v1/payments/{paymentKey}/cancel")
+    TossPaymentResponse cancel(@PathVariable("paymentKey") String paymentKey,
+                               @RequestBody TossCancelRequest request);
 }

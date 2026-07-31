@@ -19,6 +19,7 @@ dependencies {
 	implementation 'org.springframework.kafka:spring-kafka'
 	implementation 'net.logstash.logback:logstash-logback-encoder:8.1'   // 운영 JSON 로그 인코더 (ELK 파싱용)
 	implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'   // 토스 승인 API 호출 (선언형 클라이언트)
+	implementation 'org.springframework.boot:spring-boot-starter-aop'           // 아웃바운드 공통 로깅 (@Aspect)
 
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
