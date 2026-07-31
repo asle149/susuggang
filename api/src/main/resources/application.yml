@@ -15,6 +15,13 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update     # @Entity 보고 테이블 자동 생성
+  cloud:
+    openfeign:
+      client:
+        config:
+          toss-payments:
+            connect-timeout: 3000   # 연결 3초 — 토스가 아예 안 붙으면 빠르게 포기
+            read-timeout: 30000     # 응답 30초 — 결제 승인은 느릴 수 있어 넉넉히. 자동 재시도 없음(중복 승인 방지)
 
 toss:
   base-url: https://api.tosspayments.com

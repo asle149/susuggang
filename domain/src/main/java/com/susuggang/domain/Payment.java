@@ -69,6 +69,14 @@ public class Payment {
         this.approvedAt = approvedAt;
     }
 
+    public void cancelPending() {
+        this.status = PaymentStatus.CANCEL_PENDING;
+    }
+
+    public void cancel() {
+        this.status = PaymentStatus.CANCELED;
+    }
+
     public void fail(String reason) {
         this.status = PaymentStatus.FAILED;
         this.failReason = reason != null && reason.length() > FAIL_REASON_MAX

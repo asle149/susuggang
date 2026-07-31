@@ -142,6 +142,42 @@ class PaymentServiceTest {
         verifyNoInteractions(tossPaymentClient);
     }
 
+    private Long saveExpiredOrder() {
+        return orderRepository.save(Order.builder()
+                .buyerId(1L).productId(productId)
+                .status(OrderStatus.RESERVED)
+                .expiresAt(LocalDateTime.now().minusMinutes(1))
+                .build()).getId();
+    }
+
+    @Test
+    void confirm_실패면_보상_취소하고_CANCELED() {
+        Long expiredOrderId = saveExpiredOrder();
+        given(tossPaymentClient.confirm(any())).willReturn(approvedResponse("pay_comp"));
+        given(tossPaymentClient.cancel(any(), any())).willReturn(approvedResponse("pay_comp"));
+
+        assertThatThrownBy(() -> paymentService.confirmPayment(1L, expiredOrderId, "toss-1", "pay_comp", (long) PRICE))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ORDER_NOT_CONFIRMABLE);
+
+        assertThat(paymentRepository.findByPaymentKey("pay_comp").orElseThrow().getStatus())
+                .isEqualTo(PaymentStatus.CANCELED);
+    }
+
+    @Test
+    void 보상_취소마저_실패하면_CANCEL_PENDING_잔류() {
+        Long expiredOrderId = saveExpiredOrder();
+        given(tossPaymentClient.confirm(any())).willReturn(approvedResponse("pay_stuck"));
+        willThrow(tossRejection()).given(tossPaymentClient).cancel(any(), any());
+
+        assertThatThrownBy(() -> paymentService.confirmPayment(1L, expiredOrderId, "toss-1", "pay_stuck", (long) PRICE))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ORDER_NOT_CONFIRMABLE);
+
+        assertThat(paymentRepository.findByPaymentKey("pay_stuck").orElseThrow().getStatus())
+                .isEqualTo(PaymentStatus.CANCEL_PENDING);
+    }
+
     @Test
     void 같은_paymentKey_재시도는_새_행을_만들지_않는다() {
         willThrow(tossRejection()).given(tossPaymentClient).confirm(any());
