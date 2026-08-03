@@ -1,11 +1,11 @@
 # 로컬 개발 — brew Postgres + 로컬 카프카 (로그 포맷 분기는 logback-spring.xml)
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/susuggang
+    url: jdbc:postgresql://localhost:5434/susuggang   # 바통이 5432를 쓰므로 brew Postgres를 5434로 옮김
     username: sol          # 맥 사용자명 (brew Postgres 기본 롤)
     password:              # 기본값: 없음
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: localhost:9192
     consumer:
       properties:
         spring.json.trusted.packages: "*"    # 로컬 편의 — 운영은 실제 패키지로 한정
