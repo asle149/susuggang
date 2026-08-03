@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -25,7 +26,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final TossPaymentClient tossPaymentClient;
     private final OrderService orderService;
-
+    private final List<PaymentPolicy> policyList;
     // 의도적으로 @Transactional 없음 — 외부 호출(토스 승인)이 DB 커넥션·트랜잭션을 물고 기다리지 않게 경계 밖에 둔다
     public TossPaymentResponse confirmPayment(Long buyerId, Long orderId, String tossOrderId,
                                               String paymentKey, Long amount) {
@@ -36,10 +37,8 @@ public class PaymentService {
                 .getPrice();
 
         // 서버가 아는 주문 금액과 대조 — 클라이언트 금액 조작 방지 (토스 문서의 필수 검증)
-        if (amount == null || amount != price) {
-            throw new BusinessException(ErrorCode.PAYMENT_AMOUNT_MISMATCH,
-                    Map.of("orderId", orderId, "expected", price));
-        }
+        PaymentConfirmContext context = new PaymentConfirmContext(orderId, amount, price);
+        policyList.forEach(p -> p.check(context));
 
         // 토스 호출 전에 REQUESTED로 기록해야 응답을 못 받아도(타임아웃) 흔적이 남는다.
         // 같은 paymentKey 재요청은 기존 행을 이어 쓴다(unique 제약과 세트).
