@@ -17,6 +17,7 @@ public enum ErrorCode {
     RESOURCE_NOT_FOUND("SSG10003", HttpStatus.NOT_FOUND, "대상을 찾을 수 없습니다"),
     CONFLICT_STATE("SSG10004", HttpStatus.CONFLICT, "요청을 처리할 수 없는 상태입니다"),
     UNAUTHORIZED("SSG10005", HttpStatus.UNAUTHORIZED, "로그인이 필요합니다"),
+    INTERNAL_ERROR("SSG10006", HttpStatus.INTERNAL_SERVER_ERROR, "일시적인 오류가 발생했습니다"),
 
     // 주문·재고 (SSG2xxxx)
     PRODUCT_NOT_FOUND("SSG20001", HttpStatus.NOT_FOUND, "상품을 찾을 수 없습니다"),

@@ -40,4 +40,11 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(ErrorCode.RESOURCE_NOT_FOUND.getStatus())
                 .body(CommonResponse.fail(ErrorCode.RESOURCE_NOT_FOUND));
     }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<CommonResponse<Void>> handleUnknown(Exception e) {
+        log.error("미분류 예외", e);
+        return ResponseEntity.status(ErrorCode.INTERNAL_ERROR.getStatus())
+                .body(CommonResponse.fail(ErrorCode.INTERNAL_ERROR));
+    }
 }
