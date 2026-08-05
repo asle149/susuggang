@@ -31,10 +31,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-@SpringBootTest
+// 보상 토픽을 전용 이름으로 격리 — 캐시된 다른 테스트 컨텍스트의 같은 그룹 컨슈머(진짜 Feign 빈)에게
+// 파티션을 뺏기면 이 컨텍스트의 목이 영영 호출되지 않는다
+@SpringBootTest(properties = "payment.compensation-topic=payment-compensation-svc-test")
 class PaymentServiceTest {
 
     private static final int PRICE = 20000;
@@ -151,7 +155,7 @@ class PaymentServiceTest {
     }
 
     @Test
-    void confirm_실패면_보상_취소하고_CANCELED() {
+    void confirm_실패면_보상_이벤트를_거쳐_비동기로_CANCELED() throws InterruptedException {
         Long expiredOrderId = saveExpiredOrder();
         given(tossPaymentClient.confirm(any())).willReturn(approvedResponse("pay_comp"));
         given(tossPaymentClient.cancel(any(), any())).willReturn(approvedResponse("pay_comp"));
@@ -160,8 +164,9 @@ class PaymentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ORDER_NOT_CONFIRMABLE);
 
-        assertThat(paymentRepository.findByPaymentKey("pay_comp").orElseThrow().getStatus())
-                .isEqualTo(PaymentStatus.CANCELED);
+        // 취소는 컨슈머 몫 — 발행(AFTER_COMMIT)→컨슘→취소 API→CANCELED 커밋까지 파이프라인 전체를 검증
+        verify(tossPaymentClient, timeout(30_000)).cancel(any(), any());
+        assertThat(awaitStatus("pay_comp", PaymentStatus.CANCELED)).isEqualTo(PaymentStatus.CANCELED);
     }
 
     @Test
@@ -174,8 +179,21 @@ class PaymentServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ORDER_NOT_CONFIRMABLE);
 
+        // 컨슈머가 취소를 시도했지만 실패 → 잔류 스캔이 잡을 수 있게 CANCEL_PENDING 유지
+        verify(tossPaymentClient, timeout(30_000)).cancel(any(), any());
         assertThat(paymentRepository.findByPaymentKey("pay_stuck").orElseThrow().getStatus())
                 .isEqualTo(PaymentStatus.CANCEL_PENDING);
+    }
+
+    private PaymentStatus awaitStatus(String paymentKey, PaymentStatus expected) throws InterruptedException {
+        for (int i = 0; i < 75; i++) {
+            PaymentStatus status = paymentRepository.findByPaymentKey(paymentKey).orElseThrow().getStatus();
+            if (status == expected) {
+                return status;
+            }
+            Thread.sleep(200);
+        }
+        return paymentRepository.findByPaymentKey(paymentKey).orElseThrow().getStatus();
     }
 
     @Test

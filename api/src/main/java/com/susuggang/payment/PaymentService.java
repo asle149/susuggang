@@ -26,6 +26,7 @@ public class PaymentService {
     private final PaymentRepository paymentRepository;
     private final TossPaymentClient tossPaymentClient;
     private final OrderService orderService;
+    private final PaymentCompensationService compensationService;
     private final List<PaymentPolicy> policyList;
     // 의도적으로 @Transactional 없음 — 외부 호출(토스 승인)이 DB 커넥션·트랜잭션을 물고 기다리지 않게 경계 밖에 둔다
     public TossPaymentResponse confirmPayment(Long buyerId, Long orderId, String tossOrderId,
@@ -62,31 +63,16 @@ public class PaymentService {
         payment.approve(response.approvedAt());
         paymentRepository.save(payment);
 
-        // 승인 성공 후 주문 확정 — 실패하면 "돈은 나갔는데 주문은 확정 안 됨" → 보상(취소 API)으로 되돌린다
+        // 승인 성공 후 주문 확정 — 실패하면 "돈은 나갔는데 주문은 확정 안 됨" → CANCEL_PENDING을
+        // 새 트랜잭션으로 남기고(흔적 먼저) 커밋 후 카프카 이벤트로 취소를 위임한다. 유저 응답은 취소를 안 기다린다
         try {
             orderService.confirmOrder(buyerId, orderId);
         } catch (RuntimeException e) {
-            compensate(payment);
+            compensationService.requestCancel(payment.getId());
             throw e; // 확정 실패 원인(만료 등)은 그대로 사용자에게
         }
         log.info("결제 승인·주문 확정: orderId={}, paymentKey={}, amount={}",
                 orderId, response.paymentKey(), response.totalAmount());
         return response;
-    }
-
-    // 외부 승인은 롤백이 안 되므로 반대 사건(취소)으로 되돌린다. 취소 호출 전에 CANCEL_PENDING을
-    // 저장해 두어야 취소마저 실패해도 잔류 행 스캔으로 찾을 수 있다 (REQUESTED와 같은 수법)
-    private void compensate(Payment payment) {
-        payment.cancelPending();
-        paymentRepository.save(payment);
-        try {
-            tossPaymentClient.cancel(payment.getPaymentKey(), new TossCancelRequest("주문 확정 실패 자동 취소"));
-            payment.cancel();
-            paymentRepository.save(payment);
-            log.info("보상 취소 완료: orderId={}, paymentKey={}", payment.getOrderId(), payment.getPaymentKey());
-        } catch (FeignException e) {
-            log.error("보상 취소 실패 — CANCEL_PENDING 잔류: orderId={}, paymentKey={}, httpStatus={}",
-                    payment.getOrderId(), payment.getPaymentKey(), e.status());
-        }
     }
 }
