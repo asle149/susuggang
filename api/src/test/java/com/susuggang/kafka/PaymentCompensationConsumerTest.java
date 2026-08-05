@@ -7,6 +7,7 @@ import com.susuggang.domain.Payment;
 import com.susuggang.domain.PaymentStatus;
 import com.susuggang.payment.TossPaymentClient;
 import com.susuggang.repository.PaymentRepository;
+import com.susuggang.scheduler.PaymentRemnantScheduler;
 import feign.FeignException;
 import feign.Request;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,8 @@ class PaymentCompensationConsumerTest {
     @Autowired
     private PaymentCompensationConsumer consumer;
     @Autowired
+    private PaymentRemnantScheduler remnantScheduler;
+    @Autowired
     private PaymentRepository paymentRepository;
     @Autowired
     private KafkaTemplate<String, Object> kafkaTemplate;
@@ -54,6 +57,21 @@ class PaymentCompensationConsumerTest {
         consumer.handle(new PaymentCancelRequestedEvent(payment.getId()));
 
         verifyNoInteractions(tossPaymentClient);
+    }
+
+    // 잔류 스캔 복구 루프: 이벤트가 유실된 CANCEL_PENDING을 스케줄러가 재투입하면
+    // 컨슈머 단일 경로(멱등 가드 포함)를 다시 타고 CANCELED로 끝나야 한다
+    @Test
+    void 잔류_CANCEL_PENDING은_스캔이_재투입해_복구된다() throws InterruptedException {
+        Payment payment = Payment.request(1L, "pay_scan_" + System.nanoTime(), "toss-scan", 20000);
+        payment.cancelPending();
+        paymentRepository.save(payment);
+        // 발행 없이 저장만 = 이벤트 유실 상황. 스캔 기준 시각을 미래로 넘겨 10분 경과를 재현
+        remnantScheduler.scanRemnants(java.time.LocalDateTime.now().plusMinutes(11));
+        Thread.sleep(5000);
+
+        assertThat(paymentRepository.findById(payment.getId()).orElseThrow().getStatus())
+                .isEqualTo(PaymentStatus.CANCELED);
     }
 
     // 재시도(1초 x 3회)가 다 실패하면 DLQ로 격리되고, 상태는 잔류 스캔이 복구할 수 있게 남아야 한다
