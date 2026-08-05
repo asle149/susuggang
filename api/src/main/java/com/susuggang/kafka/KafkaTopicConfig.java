@@ -26,4 +26,12 @@ public class KafkaTopicConfig {
             @Value("${payment.compensation-topic:payment-compensation}") String topic) {
         return TopicBuilder.name(topic).partitions(3).replicas(1).build();
     }
+
+    // DLQ 발행은 원본과 같은 파티션 번호로 가므로 파티션 수를 맞춰 명시 생성.
+    // 접미사 "-dlt"는 spring-kafka 3.x DeadLetterPublishingRecoverer의 기본 규약
+    @Bean
+    public NewTopic paymentCompensationDlt(
+            @Value("${payment.compensation-topic:payment-compensation}") String topic) {
+        return TopicBuilder.name(topic + "-dlt").partitions(3).replicas(1).build();
+    }
 }

@@ -31,9 +31,8 @@ public class PaymentCompensationConsumer {
         try {
             tossPaymentClient.cancel(payment.getPaymentKey(), new TossCancelRequest("주문 확정 실패 자동 취소"));
         } catch (FeignException e) {
-            log.error("보상 취소 실패 — CANCEL_PENDING 잔류: paymentId={}, httpStatus={}",
-                    event.paymentId(), e.status());
-            return;
+            log.error("보상 취소 실패: paymentId={}, httpStatus={}", event.paymentId(), e.status());
+            throw e; // 예외를 잡고 정상 리턴하면 성공으로 처리(오프셋 커밋)돼 재시도·DLQ가 아예 안 돈다
         }
         payment.cancel();
         paymentRepository.save(payment);
