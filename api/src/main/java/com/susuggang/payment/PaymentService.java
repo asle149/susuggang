@@ -38,7 +38,7 @@ public class PaymentService {
                 .getPrice();
 
         // 서버가 아는 주문 금액과 대조 — 클라이언트 금액 조작 방지 (토스 문서의 필수 검증)
-        PaymentConfirmContext context = new PaymentConfirmContext(orderId, amount, price);
+        PaymentConfirmContext context = new PaymentConfirmContext(orderId, amount, price, buyerId, order.getBuyerId());
         policyList.forEach(p -> p.check(context));
 
         // 토스 호출 전에 REQUESTED로 기록해야 응답을 못 받아도(타임아웃) 흔적이 남는다.
