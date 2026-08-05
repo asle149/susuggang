@@ -1,4 +1,5 @@
 package com.susuggang.payment;
 
-public record PaymentConfirmContext(Long orderId, Long amount, int price) {
+public record PaymentConfirmContext(Long orderId, Long amount, int price,
+                                    Long buyerId, Long orderBuyerId) {
 }

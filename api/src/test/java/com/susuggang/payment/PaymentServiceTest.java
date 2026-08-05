@@ -137,6 +137,17 @@ class PaymentServiceTest {
     }
 
     @Test
+    void 남의_주문이면_토스_호출_없이_404() {
+        // 소유자 정책 — 존재를 노출하지 않으려고 403이 아닌 404로 내린다
+        assertThatThrownBy(() -> paymentService.confirmPayment(2L, orderId, "toss-1", "pay_owner", (long) PRICE))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.ORDER_NOT_FOUND);
+
+        assertThat(paymentRepository.count()).isZero();
+        verifyNoInteractions(tossPaymentClient);
+    }
+
+    @Test
     void 금액_불일치면_기록도_토스_호출도_없다() {
         assertThatThrownBy(() -> paymentService.confirmPayment(1L, orderId, "toss-1", "pay_tamper", 100L))
                 .isInstanceOf(BusinessException.class)
