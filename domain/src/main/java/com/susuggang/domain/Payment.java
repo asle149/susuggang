@@ -45,6 +45,10 @@ public class Payment {
     @Column(length = FAIL_REASON_MAX)
     private String failReason;
 
+    // 잔류 스캔 재투입 횟수 — 상한 판정 근거. 기존 행이 있는 DB에 ddl-auto가 컬럼을 추가할 수 있게 default 명시
+    @Column(nullable = false, columnDefinition = "integer default 0 not null")
+    private int cancelRetryCount;
+
     // 토스 응답의 승인 시각 원문(ISO-8601, 오프셋 포함) 보존
     private String approvedAt;
 
@@ -75,6 +79,14 @@ public class Payment {
 
     public void cancel() {
         this.status = PaymentStatus.CANCELED;
+    }
+
+    public void increaseCancelRetry() {
+        this.cancelRetryCount++;
+    }
+
+    public void failCancel() {
+        this.status = PaymentStatus.CANCEL_FAILED;
     }
 
     public void fail(String reason) {
