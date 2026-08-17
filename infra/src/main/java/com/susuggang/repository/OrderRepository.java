@@ -26,4 +26,11 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("update Order o set o.status = com.susuggang.domain.OrderStatus.CANCELED " +
             "where o.id = :orderId and o.status = com.susuggang.domain.OrderStatus.RESERVED")
     int cancelReserved(@Param("orderId") Long orderId);
+
+    // 확정됐는데 정산 장부가 없는 잔류 — 확정 시각 컬럼이 없어 expiresAt(예약 마감)이 cutoff를
+    // 지난 건만 잡는다: 확정은 마감 전에만 가능하므로 "확정 후 cutoff 이상 경과"가 보장된다
+    @Query("select o from Order o where o.status = com.susuggang.domain.OrderStatus.COMPLETED " +
+            "and o.expiresAt < :cutoff " +
+            "and not exists (select 1 from Settlement s where s.orderId = o.id)")
+    List<Order> findSettlementRemnants(@Param("cutoff") LocalDateTime cutoff);
 }
