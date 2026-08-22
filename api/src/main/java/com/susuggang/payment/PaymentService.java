@@ -60,19 +60,27 @@ public class PaymentService {
             throw new BusinessException(ErrorCode.PAYMENT_CONFIRM_FAILED, Map.of("orderId", orderId));
         }
 
-        payment.approve(response.approvedAt());
-        paymentRepository.save(payment);
-
-        // 승인 성공 후 주문 확정 — 실패하면 "돈은 나갔는데 주문은 확정 안 됨" → CANCEL_PENDING을
-        // 새 트랜잭션으로 남기고(흔적 먼저) 커밋 후 카프카 이벤트로 취소를 위임한다. 유저 응답은 취소를 안 기다린다
-        try {
-            orderService.confirmOrder(buyerId, orderId);
-        } catch (RuntimeException e) {
-            compensationService.requestCancel(payment.getId());
-            throw e; // 확정 실패 원인(만료 등)은 그대로 사용자에게
-        }
+        completeApproval(payment, buyerId, response.approvedAt());
         log.info("결제 승인·주문 확정: orderId={}, paymentKey={}, amount={}",
                 orderId, response.paymentKey(), response.totalAmount());
         return response;
+    }
+
+    public void completeApproval(Payment payment, Long buyerId, String approvedAt) {
+        payment.approve(approvedAt);
+        paymentRepository.save(payment);
+        confirmOrCompensate(payment, buyerId);
+    }
+
+    // 승인 성공 후 주문 확정 — 실패하면 "돈은 나갔는데 주문은 확정 안 됨" → CANCEL_PENDING을
+    // 새 트랜잭션으로 남기고(흔적 먼저) 커밋 후 카프카 이벤트로 취소를 위임한다. 유저 응답은 취소를 안 기다린다.
+    // 대사(조회로 DONE 확인) 경로도 이 메서드를 탄다 — 결과를 알아낸 뒤의 처리는 한 곳이어야 한다
+    public void confirmOrCompensate(Payment payment, Long buyerId) {
+        try {
+            orderService.confirmOrder(buyerId, payment.getOrderId());
+        } catch (RuntimeException e) {
+            compensationService.requestCancel(payment.getId());
+            throw e; // 확정 실패 원인(만료 등)은 그대로 호출자에게
+        }
     }
 }

@@ -3,6 +3,8 @@ package com.susuggang.scheduler;
 import com.susuggang.domain.Payment;
 import com.susuggang.domain.PaymentStatus;
 import com.susuggang.kafka.PaymentCancelRequestedEvent;
+import com.susuggang.payment.PaymentReconciliationService;
+import com.susuggang.payment.PaymentReconciliationService.Result;
 import com.susuggang.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +30,7 @@ public class PaymentRemnantScheduler {
 
     private final PaymentRepository paymentRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final PaymentReconciliationService reconciliationService;
 
     @Value("${payment.compensation-topic:payment-compensation}")
     private String compensationTopic;
@@ -67,13 +70,33 @@ public class PaymentRemnantScheduler {
             log.warn("보상 잔류 재투입: {}건", reinjected);
         }
 
-        // 결과를 모르는 건(무응답 잔류)은 자동 판정하지 않는다 — 재시도는 이중 승인 위험이라는
-        // 무재시도 원칙 그대로, 발견·기록까지만 하고 처리는 사람이 판단한다
+        // 결과를 모르는 건(무응답 잔류)은 승인을 재시도하지 않는다(이중 승인 위험) — 조회 API로 결과를
+        // 확정한 뒤에만 움직인다. 재시도가 아니라 대사(reconciliation)
         List<Payment> staleRequested = paymentRepository.findByStatusAndCreatedAtBefore(
                 PaymentStatus.REQUESTED, cutoff);
+        int approved = 0;
+        int failed = 0;
+        int canceled = 0;
+        int unresolved = 0;
+        int errors = 0;
         for (Payment payment : staleRequested) {
-            log.warn("미확정 결제 잔류: paymentId={}, orderId={}, createdAt={}",
-                    payment.getId(), payment.getOrderId(), payment.getCreatedAt());
+            try {
+                Result result = reconciliationService.reconcile(payment);
+                switch (result) {
+                    case APPROVED -> approved++;
+                    case FAILED -> failed++;
+                    case CANCELED -> canceled++;
+                    case UNRESOLVED -> unresolved++;
+                }
+            } catch (RuntimeException e) {
+                log.error("대사 실패: paymentId={}, orderId={}",
+                        payment.getId(), payment.getOrderId(), e);
+                errors++;
+            }
+        }
+        if (!staleRequested.isEmpty()) {
+            log.warn("미확정 결제 대사: 승인 {}건, 실패 {}건, 취소 {}건, 미정 {}건, 오류 {}건",
+                    approved, failed, canceled, unresolved, errors);
         }
     }
 }
