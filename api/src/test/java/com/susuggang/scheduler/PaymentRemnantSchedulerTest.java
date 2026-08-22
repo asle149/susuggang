@@ -2,6 +2,7 @@ package com.susuggang.scheduler;
 
 import com.susuggang.domain.Payment;
 import com.susuggang.domain.PaymentStatus;
+import com.susuggang.payment.PaymentReconciliationService;
 import com.susuggang.repository.PaymentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,8 @@ class PaymentRemnantSchedulerTest {
     private PaymentRepository paymentRepository;
     @Mock
     private KafkaTemplate<String, Object> kafkaTemplate;
+    @Mock
+    private PaymentReconciliationService reconciliationService;
     @InjectMocks
     private PaymentRemnantScheduler scheduler;
 
@@ -68,6 +71,39 @@ class PaymentRemnantSchedulerTest {
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCEL_FAILED);
         verify(paymentRepository).save(payment);
         verify(kafkaTemplate, never()).send(anyString(), anyString(), any());
+    }
+
+    @Test
+    void REQUESTED_잔류는_대사_서비스에_위임한다() {
+        Payment payment = Payment.request(1L, "pay_requested", "toss-requested", 20000);
+        when(paymentRepository.findByStatusAndCreatedAtBefore(eq(PaymentStatus.CANCEL_PENDING), any()))
+                .thenReturn(List.of());
+        when(paymentRepository.findByStatusAndCreatedAtBefore(eq(PaymentStatus.REQUESTED), any()))
+                .thenReturn(List.of(payment));
+        when(reconciliationService.reconcile(payment))
+                .thenReturn(PaymentReconciliationService.Result.UNRESOLVED);
+
+        scheduler.scanRemnants(LocalDateTime.now());
+
+        verify(reconciliationService).reconcile(payment);
+    }
+
+    @Test
+    void 한_건의_대사_실패가_다음_건을_막지_않는다() {
+        Payment first = Payment.request(1L, "pay_first", "toss-first", 20000);
+        Payment second = Payment.request(2L, "pay_second", "toss-second", 30000);
+        when(paymentRepository.findByStatusAndCreatedAtBefore(eq(PaymentStatus.CANCEL_PENDING), any()))
+                .thenReturn(List.of());
+        when(paymentRepository.findByStatusAndCreatedAtBefore(eq(PaymentStatus.REQUESTED), any()))
+                .thenReturn(List.of(first, second));
+        when(reconciliationService.reconcile(first)).thenThrow(new IllegalStateException("reconcile failed"));
+        when(reconciliationService.reconcile(second))
+                .thenReturn(PaymentReconciliationService.Result.APPROVED);
+
+        scheduler.scanRemnants(LocalDateTime.now());
+
+        verify(reconciliationService).reconcile(first);
+        verify(reconciliationService).reconcile(second);
     }
 
     private void stubScan(Payment pending) {
