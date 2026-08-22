@@ -68,11 +68,6 @@ public class Payment {
         return new Payment(orderId, paymentKey, tossOrderId, amount);
     }
 
-    public void approve(String approvedAt) {
-        this.status = PaymentStatus.APPROVED;
-        this.approvedAt = approvedAt;
-    }
-
     public void cancelPending() {
         this.status = PaymentStatus.CANCEL_PENDING;
     }
