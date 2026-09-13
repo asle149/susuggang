@@ -53,10 +53,15 @@ public class PaymentService {
             response = tossPaymentClient.confirm(new TossConfirmRequest(paymentKey, tossOrderId, amount));
         } catch (FeignException e) {
             log.warn("토스 승인 실패: orderId={}, httpStatus={}, body={}", orderId, e.status(), e.contentUTF8());
-            // 토스가 거절 응답을 준 확정 실패만 FAILED — 응답이 없으면(타임아웃 등) 결과를 모르므로 REQUESTED로 남긴다
+            // 토스가 거절 응답을 준 확정 실패만 FAILED — 응답이 없으면(타임아웃 등) 결과를 모르므로 REQUESTED로 남긴다.
+            // 실패 전이도 REQUESTED 가드를 탄다 — 무응답 뒤 같은 키로 재요청하면 토스가 "이미 처리됨" 4xx를 주는데,
+            // 그때 대사가 이미 APPROVED로 옮긴 장부를 FAILED로 덮으면 돈은 나갔는데 아무도 다시 보지 않는 건이 된다
             if (e.status() >= 400) {
-                payment.fail(e.contentUTF8());
-                paymentRepository.save(payment);
+                int updated = paymentRepository.settleRequested(payment.getId(), PaymentStatus.FAILED, null,
+                        Payment.clipFailReason(e.contentUTF8()));
+                if (updated == 0) {
+                    log.info("실패 전이 생략(이미 처리됨): paymentId={}, orderId={}", payment.getId(), orderId);
+                }
             }
             throw new BusinessException(ErrorCode.PAYMENT_CONFIRM_FAILED, Map.of("orderId", orderId));
         }

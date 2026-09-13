@@ -84,9 +84,9 @@ public class Payment {
         this.status = PaymentStatus.CANCEL_FAILED;
     }
 
-    public void fail(String reason) {
-        this.status = PaymentStatus.FAILED;
-        this.failReason = reason != null && reason.length() > FAIL_REASON_MAX
+    // FAILED 전이는 조건부 UPDATE(settleRequested)로만 — 사유 길이만 여기서 컬럼에 맞춘다
+    public static String clipFailReason(String reason) {
+        return reason != null && reason.length() > FAIL_REASON_MAX
                 ? reason.substring(0, FAIL_REASON_MAX)
                 : reason;
     }
