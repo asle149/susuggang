@@ -283,6 +283,45 @@ class PaymentFaultInjectionTest {
         verify(tossPaymentClient, never()).cancel(anyString(), any());
     }
 
+    // ⑤ 무응답 뒤 대사가 APPROVED로 옮긴 건에 사용자가 같은 키로 재요청 → 실제 토스는 "이미 처리됨" 4xx.
+    //    실패 전이가 REQUESTED 가드를 안 타면 APPROVED가 FAILED로 덮여 돈은 나갔는데 아무도 다시 보지 않는다.
+    @Test
+    void 대사로_APPROVED된_건에_재요청이_거절돼도_FAILED로_덮이지_않는다() {
+        int n = 20;
+        List<Long> orderIds = new ArrayList<>();
+        for (int i = 0; i < n; i++) orderIds.add(newOrder(LocalDateTime.now().plusMinutes(30)));
+        willThrow(noResponse()).given(tossPaymentClient).confirm(any());
+        for (int i = 0; i < n; i++) {
+            try {
+                paymentService.confirmPayment(1L, orderIds.get(i), "toss-ft_dup_" + i, "ft_dup_" + i, (long) PRICE);
+            } catch (BusinessException ignored) {
+            }
+        }
+        assertThat(count(PaymentStatus.REQUESTED)).isEqualTo(n);
+
+        willAnswer(inv -> response(inv.getArgument(0), "DONE")).given(tossPaymentClient).find(anyString());
+        remnantScheduler.scanRemnants(LocalDateTime.now().plusMinutes(11));
+        assertThat(count(PaymentStatus.APPROVED)).isEqualTo(n);
+
+        // 이미 승인된 결제 키의 재승인 — 토스 문서상 ALREADY_PROCESSED_PAYMENT(400)
+        willThrow(alreadyProcessed()).given(tossPaymentClient).confirm(any());
+        int rejected = 0;
+        for (Payment p : paymentRepository.findAll()) {
+            try {
+                paymentService.confirmPayment(1L, p.getOrderId(), p.getTossOrderId(), p.getPaymentKey(), (long) PRICE);
+            } catch (BusinessException e) {
+                if (e.getErrorCode() == ErrorCode.PAYMENT_CONFIRM_FAILED) rejected++;
+            }
+        }
+
+        Map<PaymentStatus, Long> finalCounts = counts();
+        System.out.printf("[장애주입⑤] APPROVED %d건에 재요청 거절 %d건 → 장부 %s%n", n, rejected, finalCounts);
+        assertThat(rejected).isEqualTo(n);
+        assertThat(finalCounts.get(PaymentStatus.APPROVED)).isEqualTo(n);
+        assertThat(finalCounts.get(PaymentStatus.FAILED)).isZero();
+        verify(tossPaymentClient, never()).cancel(anyString(), any());
+    }
+
     private Long newOrder(LocalDateTime expiresAt) {
         return orderRepository.save(Order.builder()
                 .buyerId(1L).productId(productId).status(OrderStatus.RESERVED).expiresAt(expiresAt).build()).getId();
@@ -308,6 +347,14 @@ class PaymentFaultInjectionTest {
     private FeignException serverError(String path) {
         Request request = Request.create(Request.HttpMethod.POST, path, Map.of(), null, StandardCharsets.UTF_8, null);
         return new FeignException.FeignServerException(500, "toss down", request, null, Map.of());
+    }
+
+    private FeignException alreadyProcessed() {
+        Request request = Request.create(Request.HttpMethod.POST, "/v1/payments/confirm",
+                Map.of(), null, StandardCharsets.UTF_8, null);
+        return new FeignException.BadRequest("ALREADY_PROCESSED_PAYMENT", request,
+                "{\"code\":\"ALREADY_PROCESSED_PAYMENT\",\"message\":\"이미 처리된 결제 입니다.\"}".getBytes(StandardCharsets.UTF_8),
+                Map.of());
     }
 
     private void runConcurrently(int n, IntConsumer task) throws InterruptedException {
