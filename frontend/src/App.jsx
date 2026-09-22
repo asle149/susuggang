@@ -69,7 +69,7 @@ function App() {
   // 토스 결제위젯: 결제 진행 중인 상품과 위젯 인스턴스 (view === 'payment')
   const [payTarget, setPayTarget] = useState(null)
   const [tossWidgets, setTossWidgets] = useState(null)
-  // productId → { orderId, expiresAt(ms), state: 'reserved'|'paid'|'expired', msg }
+  // productId → { orderId, expiresAt(ms), state: 'reserved'|'pending'|'paid'|'expired', msg }
   // localStorage에 보존 — 새로고침해도 예약(카운트다운)이 증발하지 않게
   const [orderCards, setOrderCards] = useState(() => {
     try {
@@ -369,10 +369,21 @@ function App() {
         }),
       })
       if (res.ok) {
-        setOrderCards(prev => ({
-          ...prev,
-          [productId]: { state: 'paid', msg: `결제 완료 · 주문번호 ${params.get('susuOrder')}` },
-        }))
+        const orderId = Number(params.get('susuOrder'))
+        const value = await readValue(res).catch(() => null)
+        if (value?.status === 'PENDING') {
+          // 승인 응답이 없어 서버가 결제사에 결과를 묻는 중 — 재결제 대신 상태 조회로 기다린다
+          setOrderCards(prev => ({
+            ...prev,
+            [productId]: { orderId, state: 'pending', msg: '결제 확인 중 · 결과가 확정되면 자동으로 반영됩니다' },
+          }))
+          pollPaymentStatus(productId, orderId)
+        } else {
+          setOrderCards(prev => ({
+            ...prev,
+            [productId]: { state: 'paid', msg: `결제 완료 · 주문번호 ${orderId}` },
+          }))
+        }
       } else if (res.status === 409) {
         setOrderCards(prev => ({
           ...prev,
@@ -398,6 +409,56 @@ function App() {
       setPayingId(null)
     }
   }
+
+  // "확인 중" 결제의 결과 대기 — 서버가 짧은 주기로 결제사에 다시 묻고, 화면은 5초마다 1분까지 상태만 조회한다
+  const POLL_INTERVAL_MS = 5000
+  const POLL_MAX = 12
+
+  async function pollPaymentStatus(productId, orderId, attempt = 0) {
+    if (attempt >= POLL_MAX) {
+      setOrderCards(prev => ({
+        ...prev,
+        [productId]: { ...prev[productId], msg: '아직 확인 중입니다 · 결과가 확정되면 반영됩니다' },
+      }))
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS))
+    try {
+      const res = await fetch(`${API}/payments/orders/${orderId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.ok) {
+        const { status } = await readValue(res)
+        if (status === 'APPROVED') {
+          setOrderCards(prev => ({ ...prev, [productId]: { state: 'paid', msg: `결제 완료 · 주문번호 ${orderId}` } }))
+          return
+        }
+        if (status === 'FAILED') {
+          setOrderCards(prev => ({ ...prev, [productId]: { state: 'error', msg: '결제 승인에 실패했습니다' } }))
+          return
+        }
+        if (status === 'CANCELED') {
+          setOrderCards(prev => ({
+            ...prev,
+            [productId]: { state: 'expired', msg: '결제 기한이 지나 결제가 취소됩니다 · 재고는 곧 복구됩니다' },
+          }))
+          loadProducts()
+          return
+        }
+      }
+    } catch {
+      // 일시 오류는 다음 시도에서
+    }
+    pollPaymentStatus(productId, orderId, attempt + 1)
+  }
+
+  // 새로고침으로 돌아와도 "확인 중" 카드는 결과를 이어서 기다린다
+  useEffect(() => {
+    if (!token) return
+    Object.entries(orderCards).forEach(([pid, card]) => {
+      if (card?.state === 'pending' && card.orderId) pollPaymentStatus(Number(pid), card.orderId)
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const visible = products.filter(p => p.title.toLowerCase().includes(query.trim().toLowerCase()))
 
@@ -561,7 +622,7 @@ function App() {
                         )}
 
                         {card?.msg && (
-                          <p className={`card-note ${card.state === 'paid' ? 'success' : 'error'}`}>
+                          <p className={`card-note ${card.state === 'paid' ? 'success' : card.state === 'pending' ? 'pending' : 'error'}`}>
                             {card.msg}
                           </p>
                         )}

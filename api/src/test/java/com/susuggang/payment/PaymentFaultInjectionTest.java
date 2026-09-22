@@ -10,6 +10,7 @@ import com.susuggang.domain.PaymentStatus;
 import com.susuggang.domain.Product;
 import com.susuggang.domain.ProductStatus;
 import com.susuggang.domain.Stock;
+import com.susuggang.dto.PaymentConfirmResponse;
 import com.susuggang.exception.BusinessException;
 import com.susuggang.exception.ErrorCode;
 import com.susuggang.kafka.PaymentCompensationDlqConsumer;
@@ -84,11 +85,11 @@ class PaymentFaultInjectionTest {
         stockRepository.save(Stock.builder().productId(productId).quantity(0).build());
     }
 
-    // ① 승인 무응답 100건 → REQUESTED 잔류 → 대사 스캔이 토스 조회 결과대로만 전이.
-    //    DONE 70(그중 10은 주문 만료 → 보상 취소) · ABORTED 20 → FAILED · 조회 실패 10 → 다음 주기에 판정.
+    // ① 승인 무응답 100건 → 승인 재요청 없이 그 자리에서 토스 조회로 판정. DONE 70(그중 10은 주문 만료 → 보상 취소) ·
+    //    ABORTED 20 → FAILED · 조회 실패 10 → "확인 중" 응답 + REQUESTED 잔류 → 짧은 주기 스캔이 다음 조회로 판정.
     //    승인 API 재호출은 0회여야 한다(이중 승인 금지).
     @Test
-    void 승인_무응답_100건은_대사가_전부_판정하고_승인을_재호출하지_않는다() throws InterruptedException {
+    void 승인_무응답_100건은_조회로_전부_판정하고_승인을_재호출하지_않는다() throws InterruptedException {
         int n = 100;
         List<Long> orderIds = new ArrayList<>();
         for (int i = 0; i < n; i++) {
@@ -107,28 +108,36 @@ class PaymentFaultInjectionTest {
         }).given(tossPaymentClient).find(anyString());
         willAnswer(inv -> response(inv.getArgument(0), "CANCELED")).given(tossPaymentClient).cancel(anyString(), any());
 
+        AtomicInteger approved = new AtomicInteger();
+        AtomicInteger pending = new AtomicInteger();
         AtomicInteger rejected = new AtomicInteger();
+        AtomicInteger notConfirmable = new AtomicInteger();
+        long confirmStart = System.nanoTime();
         runConcurrently(n, i -> {
             try {
-                paymentService.confirmPayment(1L, orderIds.get(i), "toss-ft_req_" + i, "ft_req_" + i, (long) PRICE);
+                PaymentConfirmResponse res = paymentService.confirmPayment(
+                        1L, orderIds.get(i), "toss-ft_req_" + i, "ft_req_" + i, (long) PRICE);
+                if (res.status() == PaymentConfirmResponse.Status.APPROVED) approved.incrementAndGet();
+                else pending.incrementAndGet();
             } catch (BusinessException e) {
                 if (e.getErrorCode() == ErrorCode.PAYMENT_CONFIRM_FAILED) rejected.incrementAndGet();
+                if (e.getErrorCode() == ErrorCode.ORDER_NOT_CONFIRMABLE) notConfirmable.incrementAndGet();
             }
         });
-        assertThat(rejected.get()).isEqualTo(n);
-        assertThat(count(PaymentStatus.REQUESTED)).isEqualTo(n);
-
-        long scan1 = System.nanoTime();
-        remnantScheduler.scanRemnants(LocalDateTime.now().plusMinutes(11));
-        long scan1Ms = (System.nanoTime() - scan1) / 1_000_000;
-        Map<PaymentStatus, Long> afterScan1 = counts();
-        assertThat(afterScan1.get(PaymentStatus.REQUESTED)).isEqualTo(10);   // 조회 실패분만 남는다
-        assertThat(afterScan1.get(PaymentStatus.FAILED)).isEqualTo(20);
+        long confirmMs = (System.nanoTime() - confirmStart) / 1_000_000;
+        // 사용자 응답: 즉시 조회로 60 승인·10 만료(409)·20 실패, 조회 실패 10건만 "확인 중"
+        assertThat(approved.get()).isEqualTo(60);
+        assertThat(notConfirmable.get()).isEqualTo(10);
+        assertThat(rejected.get()).isEqualTo(20);
+        assertThat(pending.get()).isEqualTo(10);
+        Map<PaymentStatus, Long> afterConfirm = counts();
+        assertThat(afterConfirm.get(PaymentStatus.REQUESTED)).isEqualTo(10);
+        assertThat(afterConfirm.get(PaymentStatus.FAILED)).isEqualTo(20);
         assertThat(awaitCount(PaymentStatus.CANCELED, 10, 30_000)).isEqualTo(10);   // 승인됐지만 만료된 주문 → 보상
 
-        long scan2 = System.nanoTime();
-        remnantScheduler.scanRemnants(LocalDateTime.now().plusMinutes(11));
-        long scan2Ms = (System.nanoTime() - scan2) / 1_000_000;
+        long scan = System.nanoTime();
+        remnantScheduler.scanRequested(LocalDateTime.now().plusMinutes(2));
+        long scanMs = (System.nanoTime() - scan) / 1_000_000;
         Map<PaymentStatus, Long> finalCounts = counts();
 
         assertThat(finalCounts.get(PaymentStatus.REQUESTED)).isZero();
@@ -138,11 +147,11 @@ class PaymentFaultInjectionTest {
         assertThat(orderRepository.findAll().stream().filter(o -> o.getStatus() == OrderStatus.COMPLETED).count())
                 .isEqualTo(70);
         verify(tossPaymentClient, times(n)).confirm(any());          // 승인 재호출 0
-        verify(tossPaymentClient, times(110)).find(anyString());     // 100 + 조회 실패 10건 재조회
+        verify(tossPaymentClient, times(110)).find(anyString());     // 즉시 조회 100 + 조회 실패 10건 스캔 재조회
         verify(tossPaymentClient, times(10)).cancel(anyString(), any());
 
-        System.out.printf("[장애주입①] 무응답 %d건 → 1차 대사 %dms: %s → 2차 대사 %dms: %s | 승인 호출 %d회(재호출 0)%n",
-                n, scan1Ms, afterScan1, scan2Ms, finalCounts, n);
+        System.out.printf("[장애주입①] 무응답 %d건 → 즉시 조회 %dms: 승인 %d·만료 %d·실패 %d·확인 중 %d → 잔류 스캔 %dms: %s | 승인 호출 %d회(재호출 0)%n",
+                n, confirmMs, approved.get(), notConfirmable.get(), rejected.get(), pending.get(), scanMs, finalCounts, n);
     }
 
     // ② 승인은 났는데 주문 확정 실패(만료) 100건 → CANCEL_PENDING 선저장 → 커밋 후 이벤트 → 컨슈머 취소.

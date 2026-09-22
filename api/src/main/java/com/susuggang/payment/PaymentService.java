@@ -3,12 +3,14 @@ package com.susuggang.payment;
 import com.susuggang.domain.Order;
 import com.susuggang.domain.Payment;
 import com.susuggang.domain.PaymentStatus;
+import com.susuggang.dto.PaymentConfirmResponse;
+import com.susuggang.dto.PaymentStatusResponse;
 import com.susuggang.exception.BusinessException;
 import com.susuggang.exception.ErrorCode;
+import com.susuggang.payment.PaymentReconciliationService.Inquiry;
 import com.susuggang.repository.OrderRepository;
 import com.susuggang.repository.PaymentRepository;
 import com.susuggang.repository.ProductRepository;
-import com.susuggang.service.OrderService;
 import feign.FeignException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,12 +28,13 @@ public class PaymentService {
     private final ProductRepository productRepository;
     private final PaymentRepository paymentRepository;
     private final TossPaymentClient tossPaymentClient;
-    private final OrderService orderService;
-    private final PaymentCompensationService compensationService;
+    private final PaymentApprovalService approvalService;
+    private final PaymentReconciliationService reconciliationService;
     private final List<PaymentPolicy> policyList;
+
     // 의도적으로 @Transactional 없음 — 외부 호출(토스 승인)이 DB 커넥션·트랜잭션을 물고 기다리지 않게 경계 밖에 둔다
-    public TossPaymentResponse confirmPayment(Long buyerId, Long orderId, String tossOrderId,
-                                              String paymentKey, Long amount) {
+    public PaymentConfirmResponse confirmPayment(Long buyerId, Long orderId, String tossOrderId,
+                                                 String paymentKey, Long amount) {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
         int price = productRepository.findById(order.getProductId())
@@ -62,42 +65,45 @@ public class PaymentService {
                 if (updated == 0) {
                     log.info("실패 전이 생략(이미 처리됨): paymentId={}, orderId={}", payment.getId(), orderId);
                 }
+                throw new BusinessException(ErrorCode.PAYMENT_CONFIRM_FAILED, Map.of("orderId", orderId));
             }
-            throw new BusinessException(ErrorCode.PAYMENT_CONFIRM_FAILED, Map.of("orderId", orderId));
+            return resolveUnanswered(payment, buyerId);
         }
 
-        completeApproval(payment, buyerId, response.approvedAt());
+        approvalService.completeApproval(payment, buyerId, response.approvedAt());
         log.info("결제 승인·주문 확정: orderId={}, paymentKey={}, amount={}",
                 orderId, response.paymentKey(), response.totalAmount());
-        return response;
+        return PaymentConfirmResponse.approved(orderId, response.paymentKey(), response.approvedAt());
     }
 
-    // 승인 전이는 REQUESTED일 때만(조건부 UPDATE) — 대사 스캔·재요청(더블클릭·새로고침)과 겹쳐도 단일 승자만 주문 확정에 간다.
-    // 패배한 쪽이 확정까지 가면 0행을 "확정 불가"로 읽어 정상 결제를 환불한다(장애 주입 실측에서 20/20 오취소) — APPROVED면 그대로 성공
-    public void completeApproval(Payment payment, Long buyerId, String approvedAt) {
-        int updated = paymentRepository.settleRequested(payment.getId(), PaymentStatus.APPROVED, approvedAt, null);
-        if (updated == 0) {
-            PaymentStatus current = paymentRepository.findById(payment.getId())
-                    .map(Payment::getStatus).orElse(null);
-            log.info("승인 전이 경합 패배(이미 처리됨): paymentId={}, orderId={}, status={}",
-                    payment.getId(), payment.getOrderId(), current);
-            if (current == PaymentStatus.APPROVED) {
-                return;
+    // 응답이 없으면 승인을 다시 보내지 않고(이중 승인 위험) 그 자리에서 조회로 한 번 묻는다.
+    // 조회로도 모르면 실패로 단정하지 않고 "확인 중"을 돌려주며, 이후는 잔류 스캔이 이어받는다
+    private PaymentConfirmResponse resolveUnanswered(Payment payment, Long buyerId) {
+        Inquiry inquiry = reconciliationService.inquire(payment);
+        switch (inquiry.result()) {
+            case APPROVED -> {
+                approvalService.confirmOrCompensate(payment, buyerId);
+                log.info("승인 무응답 → 조회로 승인 확인·주문 확정: paymentId={}, orderId={}",
+                        payment.getId(), payment.getOrderId());
+                return PaymentConfirmResponse.approved(payment.getOrderId(), payment.getPaymentKey(),
+                        inquiry.response().approvedAt());
             }
-            throw new BusinessException(ErrorCode.PAYMENT_CONFIRM_FAILED, Map.of("orderId", payment.getOrderId()));
+            case FAILED, CANCELED -> throw new BusinessException(ErrorCode.PAYMENT_CONFIRM_FAILED,
+                    Map.of("orderId", payment.getOrderId()));
+            default -> {
+                log.warn("승인 무응답, 조회로도 미확정 → 확인 중 응답: paymentId={}, orderId={}",
+                        payment.getId(), payment.getOrderId());
+                return PaymentConfirmResponse.pending(payment.getOrderId(), payment.getPaymentKey());
+            }
         }
-        confirmOrCompensate(payment, buyerId);
     }
 
-    // 승인 성공 후 주문 확정 — 실패하면 "돈은 나갔는데 주문은 확정 안 됨" → CANCEL_PENDING을
-    // 새 트랜잭션으로 남기고(흔적 먼저) 커밋 후 카프카 이벤트로 취소를 위임한다. 유저 응답은 취소를 안 기다린다.
-    // 대사(조회로 DONE 확인) 경로도 이 메서드를 탄다 — 결과를 알아낸 뒤의 처리는 한 곳이어야 한다
-    public void confirmOrCompensate(Payment payment, Long buyerId) {
-        try {
-            orderService.confirmOrder(buyerId, payment.getOrderId());
-        } catch (RuntimeException e) {
-            compensationService.requestCancel(payment.getId());
-            throw e; // 확정 실패 원인(만료 등)은 그대로 호출자에게
-        }
+    public PaymentStatusResponse getStatus(Long buyerId, Long orderId) {
+        Order order = orderRepository.findById(orderId)
+                .filter(o -> o.getBuyerId().equals(buyerId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.ORDER_NOT_FOUND));
+        return paymentRepository.findTopByOrderIdOrderByIdDesc(orderId)
+                .map(p -> PaymentStatusResponse.of(orderId, p.getStatus(), order.getStatus()))
+                .orElse(PaymentStatusResponse.none(orderId));
     }
 }

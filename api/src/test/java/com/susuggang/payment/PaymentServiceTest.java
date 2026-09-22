@@ -7,6 +7,8 @@ import com.susuggang.domain.PaymentStatus;
 import com.susuggang.domain.Product;
 import com.susuggang.domain.ProductStatus;
 import com.susuggang.domain.Stock;
+import com.susuggang.dto.PaymentConfirmResponse;
+import com.susuggang.dto.PaymentStatusResponse;
 import com.susuggang.exception.BusinessException;
 import com.susuggang.exception.ErrorCode;
 import com.susuggang.repository.OrderRepository;
@@ -32,6 +34,7 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -121,19 +124,71 @@ class PaymentServiceTest {
                 .isEqualTo(OrderStatus.RESERVED);
     }
 
-    @Test
-    void 응답이_없으면_REQUESTED로_남는다() {
-        // 타임아웃·커넥션 실패 = 토스 응답이 없어 status가 음수인 FeignException
+    // 타임아웃·커넥션 실패 = 토스 응답이 없어 status가 음수인 FeignException
+    private FeignException noResponse() {
         FeignException noResponse = mock(FeignException.class);
         when(noResponse.status()).thenReturn(-1);
         when(noResponse.contentUTF8()).thenReturn("");
-        willThrow(noResponse).given(tossPaymentClient).confirm(any());
+        return noResponse;
+    }
 
-        assertThatThrownBy(() -> paymentService.confirmPayment(1L, orderId, "toss-1", "pay_timeout", (long) PRICE))
-                .isInstanceOf(BusinessException.class);
+    @Test
+    void 응답이_없고_조회로도_모르면_확인_중으로_응답하고_REQUESTED로_남는다() {
+        willThrow(noResponse()).given(tossPaymentClient).confirm(any());
+        // find는 스텁하지 않음 → null 응답 = 조회로도 결과를 모름
 
+        PaymentConfirmResponse response =
+                paymentService.confirmPayment(1L, orderId, "toss-1", "pay_timeout", (long) PRICE);
+
+        assertThat(response.status()).isEqualTo(PaymentConfirmResponse.Status.PENDING);
+        assertThat(response.orderId()).isEqualTo(orderId);
         Payment payment = paymentRepository.findByPaymentKey("pay_timeout").orElseThrow();
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REQUESTED);
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.RESERVED);
+        verify(tossPaymentClient, times(1)).confirm(any());   // 승인 재요청 없음
+        verify(tossPaymentClient).find("pay_timeout");
+        assertThat(paymentService.getStatus(1L, orderId).status()).isEqualTo(PaymentStatusResponse.Status.PENDING);
+    }
+
+    @Test
+    void 응답이_없어도_조회가_DONE이면_즉시_승인_기록과_주문_확정() {
+        willThrow(noResponse()).given(tossPaymentClient).confirm(any());
+        given(tossPaymentClient.find("pay_late")).willReturn(approvedResponse("pay_late"));
+
+        PaymentConfirmResponse response =
+                paymentService.confirmPayment(1L, orderId, "toss-1", "pay_late", (long) PRICE);
+
+        assertThat(response.status()).isEqualTo(PaymentConfirmResponse.Status.APPROVED);
+        Payment payment = paymentRepository.findByPaymentKey("pay_late").orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.APPROVED);
+        assertThat(orderRepository.findById(orderId).orElseThrow().getStatus()).isEqualTo(OrderStatus.COMPLETED);
+        verify(tossPaymentClient, times(1)).confirm(any());
+        assertThat(paymentService.getStatus(1L, orderId).status()).isEqualTo(PaymentStatusResponse.Status.APPROVED);
+    }
+
+    @Test
+    void 응답이_없고_조회가_ABORTED면_FAILED_기록과_승인_실패_응답() {
+        willThrow(noResponse()).given(tossPaymentClient).confirm(any());
+        given(tossPaymentClient.find("pay_aborted")).willReturn(new TossPaymentResponse(
+                "pay_aborted", "toss-1", "ABORTED", "간편결제", (long) PRICE, null));
+
+        assertThatThrownBy(() -> paymentService.confirmPayment(1L, orderId, "toss-1", "pay_aborted", (long) PRICE))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.PAYMENT_CONFIRM_FAILED);
+
+        Payment payment = paymentRepository.findByPaymentKey("pay_aborted").orElseThrow();
+        assertThat(payment.getStatus()).isEqualTo(PaymentStatus.FAILED);
+        assertThat(paymentService.getStatus(1L, orderId).status()).isEqualTo(PaymentStatusResponse.Status.FAILED);
+    }
+
+    @Test
+    void 상태_조회는_결제_기록이_없으면_NONE이고_남의_주문이면_404() {
+        assertThat(paymentService.getStatus(1L, orderId).status()).isEqualTo(PaymentStatusResponse.Status.NONE);
+        assertThatThrownBy(() -> paymentService.getStatus(2L, orderId))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(ErrorCode.ORDER_NOT_FOUND);
     }
 
     @Test

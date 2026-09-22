@@ -21,32 +21,49 @@ public class PaymentReconciliationService {
     private final PaymentRepository paymentRepository;
     private final OrderRepository orderRepository;
     private final TossPaymentClient tossPaymentClient;
-    private final PaymentService paymentService;
+    private final PaymentApprovalService approvalService;
     private final PaymentCompensationService compensationService;
 
     public enum Result {
         APPROVED, FAILED, CANCELED, UNRESOLVED
     }
 
+    public record Inquiry(Result result, TossPaymentResponse response) {
+        static Inquiry unresolved() {
+            return new Inquiry(Result.UNRESOLVED, null);
+        }
+    }
+
+    // 잔류 스캔 경로 — 조회·전이 뒤 주문 후속까지. 확정 실패는 삼키고 다음 건으로 간다(보상은 이미 걸렸다)
+    public Result reconcile(Payment payment) {
+        Inquiry inquiry = inquire(payment);
+        if (inquiry.result() != Result.APPROVED) {
+            return inquiry.result();
+        }
+        return finishApproved(payment);
+    }
+
+    // 조회 → 식별자·금액 대조 → 조건부 전이까지. 주문 후속은 호출자 몫 — 사용자 경로는 확정 실패(만료)를
+    // 그대로 돌려줘야 하고 스캔 경로는 삼켜야 해서 둘의 뒤처리가 다르다.
     // @Transactional 없음 — 외부 조회가 커넥션·트랜잭션을 물지 않게 경계 밖(confirmPayment와 같은 원칙).
     // 전이는 REQUESTED 가드가 있는 조건부 UPDATE라 스캔~전이 사이의 사용자 재요청과 겹쳐도 단일 승자
-    public Result reconcile(Payment payment) {
+    public Inquiry inquire(Payment payment) {
         TossPaymentResponse response;
         try {
             response = tossPaymentClient.find(payment.getPaymentKey());
         } catch (FeignException e) {
             log.warn("결제 조회 실패: paymentId={}, orderId={}, httpStatus={}",
                     payment.getId(), payment.getOrderId(), e.status());
-            return Result.UNRESOLVED;
+            return Inquiry.unresolved();
         }
 
         if (response == null) {
             log.error("결제 조회 응답 없음: paymentId={}, orderId={}",
                     payment.getId(), payment.getOrderId());
-            return Result.UNRESOLVED;
+            return Inquiry.unresolved();
         }
         if (!hasMatchingIdentity(payment, response)) {
-            return Result.UNRESOLVED;
+            return Inquiry.unresolved();
         }
 
         String status = response.status();
@@ -54,27 +71,28 @@ public class PaymentReconciliationService {
             if (!Objects.equals(response.totalAmount(), (long) payment.getAmount())) {
                 log.error("결제 조회 응답 불일치: paymentId={}, orderId={}, expectedAmount={}, actualAmount={}",
                         payment.getId(), payment.getOrderId(), payment.getAmount(), response.totalAmount());
-                return Result.UNRESOLVED;
+                return Inquiry.unresolved();
             }
-            return reconcileApproved(payment, response.approvedAt());
+            return settle(payment, PaymentStatus.APPROVED, response.approvedAt(), null)
+                    ? new Inquiry(Result.APPROVED, response) : Inquiry.unresolved();
         }
         if ("PARTIAL_CANCELED".equals(status)) {
             log.error("부분 취소 상태, 수동 확인 필요: paymentId={}, orderId={}",
                     payment.getId(), payment.getOrderId());
-            return Result.UNRESOLVED;
+            return Inquiry.unresolved();
         }
         if ("CANCELED".equals(status)) {
             return settle(payment, PaymentStatus.CANCELED, null, null)
-                    ? Result.CANCELED : Result.UNRESOLVED;
+                    ? new Inquiry(Result.CANCELED, response) : Inquiry.unresolved();
         }
         if ("ABORTED".equals(status) || "EXPIRED".equals(status)) {
             return settle(payment, PaymentStatus.FAILED, null, "toss status=" + status)
-                    ? Result.FAILED : Result.UNRESOLVED;
+                    ? new Inquiry(Result.FAILED, response) : Inquiry.unresolved();
         }
 
         log.warn("미확정 결제 잔류: paymentId={}, orderId={}, tossStatus={}",
                 payment.getId(), payment.getOrderId(), status);
-        return Result.UNRESOLVED;
+        return Inquiry.unresolved();
     }
 
     private boolean hasMatchingIdentity(Payment payment, TossPaymentResponse response) {
@@ -90,15 +108,11 @@ public class PaymentReconciliationService {
         return false;
     }
 
-    private Result reconcileApproved(Payment payment, String approvedAt) {
-        if (!settle(payment, PaymentStatus.APPROVED, approvedAt, null)) {
-            return Result.UNRESOLVED;
-        }
-
+    private Result finishApproved(Payment payment) {
         Order order = orderRepository.findById(payment.getOrderId()).orElse(null);
         if (order != null) {
             try {
-                paymentService.confirmOrCompensate(payment, order.getBuyerId());
+                approvalService.confirmOrCompensate(payment, order.getBuyerId());
             } catch (BusinessException e) {
                 log.warn("승인 확인, 주문 확정 실패 → 보상 경로: paymentId={}, orderId={}, errorCode={}",
                         payment.getId(), payment.getOrderId(), e.getErrorCode());
