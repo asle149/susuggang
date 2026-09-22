@@ -22,8 +22,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class PaymentRemnantScheduler {
 
-    // 정상 흐름이면 초 단위로 끝나는 상태들 — 10분을 넘겼다면 이벤트 유실·DLQ행까지 전부 실패한 잔류다
-    private static final Duration REMNANT_THRESHOLD = Duration.ofMinutes(10);
+    // 취소 대기는 정상 흐름이면 초 단위로 끝난다 — 10분을 넘겼다면 이벤트 유실·DLQ행까지 전부 실패한 잔류다
+    private static final Duration CANCEL_REMNANT_THRESHOLD = Duration.ofMinutes(10);
+
+    // 승인 무응답은 사용자가 "확인 중" 화면에서 기다리는 중이라 짧게 돈다. 기준은 토스 응답 타임아웃(연결 3초+응답 30초)보다
+    // 길게 — 아직 응답을 기다리는 요청과 겹치는 조회를 줄인다. 겹쳐도 전이는 조건부 UPDATE라 단일 승자
+    private static final Duration REQUESTED_THRESHOLD = Duration.ofSeconds(60);
 
     // 재투입 상한 — 여기까지 실패했으면 일시 장애가 아니라고 보고 자동 복구를 끊는다 (무한 재투입 방지)
     private static final int CANCEL_RETRY_CAP = 3;
@@ -37,12 +41,23 @@ public class PaymentRemnantScheduler {
 
     // initialDelay: 컨텍스트가 뜰 때마다 도는 소음 방지 — 재기동 직후 잔류도 다음 주기에 잡힌다
     @Scheduled(initialDelay = 600_000, fixedDelay = 600_000)
-    public void scanRemnants() {
-        scanRemnants(LocalDateTime.now());
+    public void scanCancelPending() {
+        scanCancelPending(LocalDateTime.now());
     }
 
+    @Scheduled(initialDelay = 30_000, fixedDelay = 30_000)
+    public void scanRequested() {
+        scanRequested(LocalDateTime.now());
+    }
+
+    // 두 스캔을 한 번에 — 테스트·수동 실행용
     public void scanRemnants(LocalDateTime now) {
-        LocalDateTime cutoff = now.minus(REMNANT_THRESHOLD);
+        scanCancelPending(now);
+        scanRequested(now);
+    }
+
+    public void scanCancelPending(LocalDateTime now) {
+        LocalDateTime cutoff = now.minus(CANCEL_REMNANT_THRESHOLD);
 
         // 취소해야 하는데 아직 못 한 건 — 보상 토픽에 재투입. 실행은 컨슈머 단일 경로로 유지해야
         // 멱등 가드도 한 곳이면 된다 (스케줄러는 발견과 재투입만)
@@ -69,11 +84,13 @@ public class PaymentRemnantScheduler {
         if (reinjected > 0) {
             log.warn("보상 잔류 재투입: {}건", reinjected);
         }
+    }
 
-        // 결과를 모르는 건(무응답 잔류)은 승인을 재시도하지 않는다(이중 승인 위험) — 조회 API로 결과를
-        // 확정한 뒤에만 움직인다. 재시도가 아니라 대사(reconciliation)
+    // 결과를 모르는 건(무응답 잔류)은 승인을 재시도하지 않는다(이중 승인 위험) — 조회 API로 결과를
+    // 확정한 뒤에만 움직인다. 재시도가 아니라 대사(reconciliation)
+    public void scanRequested(LocalDateTime now) {
         List<Payment> staleRequested = paymentRepository.findByStatusAndCreatedAtBefore(
-                PaymentStatus.REQUESTED, cutoff);
+                PaymentStatus.REQUESTED, now.minus(REQUESTED_THRESHOLD));
         int approved = 0;
         int failed = 0;
         int canceled = 0;

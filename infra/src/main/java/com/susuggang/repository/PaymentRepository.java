@@ -16,6 +16,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByPaymentKey(String paymentKey);
 
+    // 주문 하나에 결제 시도가 여럿 남을 수 있다 — 사용자에게 보여줄 건 마지막 시도
+    Optional<Payment> findTopByOrderIdOrderByIdDesc(Long orderId);
+
     List<Payment> findByStatusAndCreatedAtBefore(PaymentStatus status, LocalDateTime before);
 
     // 스캔 이후 정상 요청이 끝났으면 오래된 객체가 완료 상태를 덮어쓰지 못하도록 REQUESTED만 전이한다.

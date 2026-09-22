@@ -384,6 +384,10 @@ main.wrap {
   color: var(--danger);
 }
 
+.card-note.pending {
+  color: #b26a00;
+}
+
 /* ── 상태 박스 ─────────────────────── */
 .status-box {
   margin: 72px 0;

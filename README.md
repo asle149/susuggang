@@ -51,8 +51,11 @@ POST /payments/confirm
   → 정책 순회 (금액 대조 · 주문 소유자)         트랜잭션 없음
   → Payment REQUESTED 기록 · 커밋
   → 토스 승인 API (연결 3초 · 응답 30초 · 자동 재시도 없음)
+      무응답이면 → 승인 재요청 없이 조회 API 1회 → 미확정이면 status=PENDING 응답
   → settleRequested 조건부 UPDATE로 APPROVED 전이
   → 주문 확정 + 정산 이벤트 발행                  @Transactional
+
+GET /payments/orders/{orderId}   PENDING 응답을 받은 클라이언트가 결과를 기다리는 창구
 ```
 
 - 승인 전에 서버 기준가와 대조한다. 결제창 금액은 클라이언트 값이라 조작될 수 있고, 인증(클라이언트 키)과 승인(시크릿 키) 사이가 서버가 검증할 수 있는 유일한 구간이다. 어긋나면 토스를 부르지 않고 400으로 끊는다.
@@ -68,7 +71,9 @@ POST /payments/confirm
 flowchart TB
     SAVE["Payment REQUESTED 커밋"] --> TOSS{"토스 승인 호출"}
     TOSS -->|"4xx 거절"| F["FAILED"]
-    TOSS -->|"무응답"| R["REQUESTED 잔류"]
+    TOSS -->|"무응답"| INQ{"조회 API 1회<br/>승인 재요청 없음"}
+    INQ -->|"판정"| UPD
+    INQ -->|"미확정"| R["status=PENDING 응답<br/>REQUESTED 잔류"]
     TOSS -->|"성공"| UPD{"settleRequested<br/>WHERE status = REQUESTED"}
     UPD -->|"0행"| SKIP["이미 처리됨 · 확정 안 함"]
     UPD -->|"1행"| CONF{"주문 확정<br/>@Transactional"}
@@ -76,15 +81,15 @@ flowchart TB
     CONF -->|"실패"| CP["CANCEL_PENDING 별도 빈에서 커밋"]
     CP --> CC["AFTER_COMMIT → 취소 컨슈머 → 토스 취소 API"]
     CC -->|"1초 × 3회 실패"| DLQ["-dlt 격리 · 상태 유지"]
-    R --> SC["10분 잔류 스캔"]
-    DLQ --> SC
-    SC -->|"REQUESTED"| RC["대사: 조회 API로 판정"]
-    SC -->|"CANCEL_PENDING"| RE["재투입 · 상한 3회 → CANCEL_FAILED"]
+    R --> SR["30초 주기 스캔<br/>(생성 60초 경과분)"]
+    SR --> RC["대사: 조회 API로 판정"]
     RC --> UPD
+    DLQ --> SC["10분 잔류 스캔"]
+    SC --> RE["재투입 · 상한 3회 → CANCEL_FAILED"]
 ```
 
 - **거절**: 토스가 4xx를 주면 `FAILED`로 적는다.
-- **무응답 → 조회 대사**: 승인 API에는 멱등성이 없어 재요청이 곧 이중 승인 위험이다. `REQUESTED`를 그대로 두고 10분 주기 스캔이 조회 API(`GET /v1/payments/{paymentKey}`)로 결과를 확인해 `DONE → APPROVED`, `ABORTED`·`EXPIRED → FAILED`, `CANCELED → CANCELED`로 옮긴다. 부분 취소, 식별자·금액 불일치, 조회 실패는 전이 없이 남겨 사람이 본다.
+- **무응답 → 조회로 판정**: 승인 API에는 멱등성이 없어 재요청이 곧 이중 승인 위험이다. 응답이 없으면 그 자리에서 조회 API(`GET /v1/payments/{paymentKey}`)로 한 번 묻고, 결과대로 `DONE → APPROVED`(주문 확정까지 동기로), `ABORTED`·`EXPIRED → FAILED`, `CANCELED → CANCELED`로 옮긴다. 조회로도 모르면 실패로 단정하지 않고 `REQUESTED`를 유지한 채 `status=PENDING`으로 응답하며, 30초 주기 스캔이 생성 60초가 지난 건을 같은 조회로 다시 판정한다. 클라이언트는 재결제 대신 `GET /payments/orders/{orderId}`를 5초 간격으로 1분까지 조회한다. 부분 취소, 식별자·금액 불일치, 조회 실패는 전이 없이 남겨 다음 주기나 사람이 본다.
 - **승인 후 확정 실패 → 보상 취소**: `CANCEL_PENDING`을 별도 빈(`PaymentCompensationService`)에서 먼저 커밋하고, 커밋 뒤 발행된 이벤트를 컨슈머가 받아 취소 API를 부른다. 사용자 응답은 취소 왕복을 기다리지 않는다. 취소가 실패하면 1초 간격 3회 재시도 뒤 `-dlt` 토픽으로 격리되고 상태는 `CANCEL_PENDING`으로 남아 스캔이 재투입한다. 재투입 3회를 넘기면 `CANCEL_FAILED`로 빼고 사람이 처리한다.
 - **단일 승자**: 승인 전이는 `REQUESTED`일 때만 성립하는 조건부 UPDATE다. 영향 행 수가 1인 쪽만 주문 확정으로 들어가고, 0행이면 다른 경로(대사 스캔, 새로고침·더블클릭 재요청)가 이미 처리한 것으로 보고 확정을 진행하지 않는다.
 
@@ -101,14 +106,15 @@ int settleRequested(@Param("id") Long id, @Param("status") PaymentStatus status,
 
 ## 결제 장애 주입 실측
 
-운영 코드를 바꾸지 않고 토스 클라이언트에만 지연과 오류를 심었다. PostgreSQL과 Kafka는 실제로 띄운 상태이고 판정 기준은 건수다. (`PaymentFaultInjectionTest`, 4건 48초)
+운영 코드를 바꾸지 않고 토스 클라이언트에만 지연과 오류를 심었다. PostgreSQL과 Kafka는 실제로 띄운 상태이고 판정 기준은 건수다. (`PaymentFaultInjectionTest`, 5건)
 
 | 주입한 장애 | 규모 | 결과 |
 |---|---|---|
-| 승인 무응답(타임아웃) 동시 | 100건 | 1차 대사 177ms에 90건 판정, 조회 실패 10건은 2차 대사 23ms에 판정 → REQUESTED 잔류 0, 승인 API 재호출 0회(조회 110회) |
+| 승인 무응답(타임아웃) 동시 | 100건 | 즉시 조회 109ms에 90건 판정(승인 60 · 만료 409 10 · 실패 20), 조회 실패 10건은 PENDING 응답 후 스캔 19ms에 판정 → REQUESTED 잔류 0, 승인 API 재호출 0회(조회 110회) |
 | 승인 후 주문 확정 실패(만료) 동시 | 100건 | 사용자 응답 69ms, 전부 CANCELED까지 275ms, 취소 호출 100회로 이중 취소 0 |
 | 취소 API 장애(최초+재시도 3회 전부 500) | 10건 | 시도 40회 → DLQ 격리 10건 → 잔류 스캔 재투입 → 복구 후 CANCELED 10, 상한 초과 0 |
 | 대사 스캔과 사용자 재요청 동시 경합 | 20건 | 수정 전 정상 결제 오취소 20건, 수정 후 0건 |
+| 대사로 APPROVED된 건에 재요청 거절(400) | 20건 | 실패 전이도 REQUESTED 가드를 타 승인 기록 20건 유지, FAILED 0 |
 
 네 번째 시나리오가 결함을 드러냈다. 사용자 경로의 승인 전이가 무조건 덮어쓰기라 대사 스캔과 사용자 요청이 둘 다 주문 확정까지 갔고, 뒤늦은 쪽이 `confirmReserved` 0행을 "확정 불가"로 읽어 정상 결제를 환불했다. 승인 전이를 `settleRequested` 조건부 UPDATE로 바꿔 단일 승자만 확정에 들어가게 고쳤다(SSG-47). 표의 ms는 토스 응답 지연을 뺀 서버 처리 시간이고, 3회 실행에서 건수는 모두 같았다.
 

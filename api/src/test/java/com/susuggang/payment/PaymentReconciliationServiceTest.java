@@ -49,7 +49,7 @@ class PaymentReconciliationServiceTest {
     @Mock
     private TossPaymentClient tossPaymentClient;
     @Mock
-    private PaymentService paymentService;
+    private PaymentApprovalService approvalService;
     @Mock
     private PaymentCompensationService compensationService;
     @InjectMocks
@@ -76,7 +76,7 @@ class PaymentReconciliationServiceTest {
         assertThat(result).isEqualTo(PaymentReconciliationService.Result.APPROVED);
         verify(paymentRepository).settleRequested(
                 PAYMENT_ID, PaymentStatus.APPROVED, APPROVED_AT, null);
-        verify(paymentService).confirmOrCompensate(payment, BUYER_ID);
+        verify(approvalService).confirmOrCompensate(payment, BUYER_ID);
     }
 
     @Test
@@ -88,7 +88,7 @@ class PaymentReconciliationServiceTest {
         PaymentReconciliationService.Result result = reconciliationService.reconcile(payment);
 
         assertThat(result).isEqualTo(PaymentReconciliationService.Result.UNRESOLVED);
-        verify(paymentService, never()).confirmOrCompensate(any(), any());
+        verify(approvalService, never()).confirmOrCompensate(any(), any());
         verify(orderRepository, never()).findById(any());
     }
 
@@ -115,7 +115,7 @@ class PaymentReconciliationServiceTest {
                 PAYMENT_ID, PaymentStatus.APPROVED, APPROVED_AT, null)).thenReturn(1);
         when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
         doThrow(new BusinessException(ErrorCode.ORDER_NOT_CONFIRMABLE))
-                .when(paymentService).confirmOrCompensate(payment, BUYER_ID);
+                .when(approvalService).confirmOrCompensate(payment, BUYER_ID);
 
         PaymentReconciliationService.Result result = reconciliationService.reconcile(payment);
 
@@ -130,7 +130,7 @@ class PaymentReconciliationServiceTest {
                 PAYMENT_ID, PaymentStatus.APPROVED, APPROVED_AT, null)).thenReturn(1);
         when(orderRepository.findById(ORDER_ID)).thenReturn(Optional.of(order));
         doThrow(new IllegalStateException("save failed"))
-                .when(paymentService).confirmOrCompensate(payment, BUYER_ID);
+                .when(approvalService).confirmOrCompensate(payment, BUYER_ID);
 
         assertThatThrownBy(() -> reconciliationService.reconcile(payment))
                 .isInstanceOf(IllegalStateException.class)
